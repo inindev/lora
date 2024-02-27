@@ -20,7 +20,7 @@
                                                               //  2: 500 kHz,
                                                               //  3: reserved]
 #define LORA_SPREADING_FACTOR                       7         // [SF7..SF12]
-#define LORA_CODINGRATE                             1         // [1: 4/5,
+#define LORA_CODINGRATE                             3         // [1: 4/5,
                                                               //  2: 4/6,
                                                               //  3: 4/7,
                                                               //  4: 4/8]
@@ -29,6 +29,8 @@
 #define LORA_PUBLIC_NETWORK_ON                      true
 #define LORA_FIX_LENGTH_PAYLOAD_ON                  false
 #define LORA_IQ_INVERSION_ON                        false
+
+#define USE_COLOR_LOGGING                           true
 
 
 void on_tx_done(void);
@@ -174,7 +176,7 @@ void on_rx_done(uint8_t* payload, uint16_t payload_len, int16_t rssi, int8_t snr
 
     Serial.printf("------------------------\r\n");
     Serial.printf("[RX packet %d] rssi: %d, snr: %d, size: %d\r\n", ++rx_count, rssi, snr, payload_len);
-    print_mini_report(payload, (uint8_t)payload_len, true);
+    print_mini_report(payload, (uint8_t)payload_len, USE_COLOR_LOGGING);
 
     state = RX;
 }
