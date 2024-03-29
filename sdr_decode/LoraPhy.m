@@ -24,9 +24,8 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
         ft_bins;    % number of fft bins
         ft_len;     % fft size
         cfo;        % carrier frequency offset
-        upchirp;    % used for de-chirping
-        downchirp;  % used for de-chirping
-        chirps;     % used for de-chirping
+        upchirp;    % downchirp removal
+        downchirp;  % upchirp removal
     end
 
     methods
@@ -128,31 +127,38 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 sym_count = 9;
             end
 
-            type = ["upchirped", "dnchirped"];
-
+            close(findobj('type','figure','number',1));
             f = figure(1);
-            scn = get(0,'screensize');
-            f.Position = [1,439,scn(1,3)-120,680];
+            scn = get(0,"screensize");
+            f.Position = [20,400,scn(1,3)-120,680];
+            t = tiledlayout(2, sym_count, "TileSpacing", "compact", "Padding", "compact");
 
-            for jj = 1:sym_count
-                for cdir = 1:2
-                    % 2 x n plot
-                    [fbin, mval, ft_pow] = this.dechirp(pos, (cdir==1));
-                    subplot(2, sym_count, ((cdir-1) * sym_count + jj));
+            axes = zeros(2 * sym_count);
+            type = ["up-chirped ", "down-chirped "];
+            for cdir = 1:2
+                tpos = pos;
+                for jj = 1:sym_count
+                    [fbin, mval, ft_pow] = this.dechirp(tpos, (cdir==1));
+
+                    ax = nexttile;
                     plot(ft_pow);
                     %hist(ft_pow, length(ft_pow));
-                    title(type(cdir) + " " + jj);
+                    title(type(cdir) + jj);
+                    ax.XLim = [0, this.ft_bins];
+                    ax.XTick = linspace(0, this.ft_bins, 5);
+                    axes((cdir-1)*sym_count + jj) = ax;
 
                     hold on
                     plot(fbin, mval, 'rd');
                     %fprintf("plot(%d,%d) fbin = %d\n", cdir, jj, fbin);
-                end
 
-                pos = pos + this.sps;
+                    tpos = tpos + this.sps;
+                end
             end
+
+            linkaxes(axes, 'xy');
         end
     end
-
 
     methods(Static)
         function v = read(filename, count)
