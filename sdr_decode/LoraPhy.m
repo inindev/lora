@@ -4,7 +4,7 @@
 %
 
 % phy = LoraPhy(7, 125e3, 'lora_923.3_sample/lora.raw', 1024e3, true)
-% phy.detect(1)
+% phy.detect_preamble(1)
 % for jj = (1:256); phy.detect(jj); end
 % phy.plot_symbols(1024, 13)
 
@@ -29,10 +29,10 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
     end
 
     methods
-        function this = LoraPhy(sf, bw, filename, file_fs, invert)
+        function this = LoraPhy(sf, bw, filename, file_fs, invert_iq)
             % LoraPhy
             if(nargin < 5)
-                invert = false;
+                invert_iq = false;
             end
 
             this.sf = sf;             % spreading factor (7,8,9,10,11,12)
@@ -50,61 +50,79 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             this.sig = LoraPhy.read(filename);
             this.sig = lowpass(this.sig, bw/2, file_fs);
             this.sig = resample(this.sig, this.fs, file_fs);  % resample signal @ 2x bandwidth
-            if(invert)
+            if(invert_iq)
                 % swap I and Q channels
                 this.sig = imag(this.sig) + 1j * real(this.sig);
             end
 
             t = (0:this.sps-1) / this.fs;
             this.upchirp = chirp(t, -this.bw/2, t(end), this.bw/2, 'linear', 0, 'complex').';
-            %close all; pspectrum(this.upchirp, this.fs, "spectrogram", Reassign=true);
+            %close all; pspectrum(this.upchirp, this.fs, 'spectrogram', Reassign=true);
             this.downchirp = chirp(t, this.bw/2, t(end), -this.bw/2, 'linear', 0, 'complex').';
         end
 
-        function x = detect(this, pos)
-            % DETECT(pos, cdir)
-            %   pos:    offset from the beginning of signal
+        function x = detect_preamble(this, pos, invert, preamble_len)
+            % DETECT_PREAMBLE(pos, [invert], [preamble_len])
+            % input:
+            %   pos:           offset from the beginning of signal
+            %   invert:        detect downchirps rather than upchirps
+            %   preamble_len:  preamble length
+            % output:
+            %    x:  signal position of fft bin0 for the last detected preamble chirp
             x = 0;
             if(pos < 1)
                 return;
             end
 
-            start = pos;
-            det_count = 0;
-            last = 0;
-            while(pos <= (length(this.sig) - this.sps))
-                fbin = dechirp(this, pos);
+            if(nargin < 3)
+                invert = false;
+            end
 
-                if(abs(fbin - last) <= this.ft_det_bins)
+            if(nargin < 4)
+                preamble_len = this.preamble_len;
+            end
+
+            det_count = 0;
+            fbin_last = 0;
+            while(pos <= (length(this.sig) - this.sps))
+                fbin = this.dechirp(pos, invert);
+
+                if(abs(fbin - fbin_last) <= this.ft_det_bins)
                     det_count = det_count + 1;
-                    if(det_count > this.preamble_len-2)
+                    if(det_count >= preamble_len-1)
                         % preamble detected, adjust fft bin to zero
-                        x = pos - fbin + 1;
-                        fprintf("start:%3d  fbin:%4d  x:%d  *** preamble detected ***\n", start, fbin, x);
+                        if(invert)
+                            x = pos + fbin - 1;               % inverted chirp, non-inverted IQ
+                        else
+                            x = pos + (this.sps - fbin) + 1;  % non-inverted chirp, inverted IQ
+                        end
+                        %fprintf('start:%3d  fbin:%4d  x:%d  *** preamble detected ***\n', start, fbin, x);
                         return;
                     end
                 else
                     det_count = 0;
                 end
-                last = fbin;
+
+                fbin_last = fbin;
                 pos = pos + this.sps;
             end
         end
 
-        function [fbin, mval, ft_pow] = dechirp(this, pos, is_up)
-            % DECHIRP:  apply dechirping on the symbol at pos
+        function [fbin, mval, ft_pow] = dechirp(this, pos, invert)
+            % DECHIRP(pos, [invert])
+            % apply dechirping on the symbol at pos
             % input:
-            %      pos:  symbol index
-            %    is_up:  apply upchirp rather than downchirp
+            %      pos:  starting signal position
+            %   invert:  apply upchirp rather than downchirp
             % output:
             %     fbin:  fft bin with the greatest power
             %     mval:  maximum fft power value
             %   ft_pow:  vector of power levels by bin
             if(nargin < 3)
-                is_up = false;
+                invert = false;
             end
 
-            if(is_up)
+            if(invert)
                 chp = this.upchirp;
             else
                 chp = this.downchirp;
@@ -127,11 +145,11 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 sym_count = 9;
             end
 
-            close(findobj('type','figure','number',1));
+            close(findobj('type', 'figure', 'number', 1));
             f = figure(1);
-            scn = get(0,"screensize");
+            scn = get(0, 'screensize');
             f.Position = [20,400,scn(1,3)-120,680];
-            t = tiledlayout(2, sym_count, "TileSpacing", "compact", "Padding", "compact");
+            t = tiledlayout(2, sym_count, 'TileSpacing', 'compact', 'Padding', 'compact');
 
             axes = zeros(2 * sym_count);
             type = ["up-chirped ", "down-chirped "];
@@ -150,7 +168,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
 
                     hold on
                     plot(fbin, mval, 'rd');
-                    %fprintf("plot(%d,%d) fbin = %d\n", cdir, jj, fbin);
+                    %fprintf('plot(%d,%d) fbin = %d\n', cdir, jj, fbin);
 
                     tpos = tpos + this.sps;
                 end
