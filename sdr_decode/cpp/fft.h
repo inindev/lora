@@ -4,9 +4,9 @@
 
 namespace
 {
-    long log2(long N)
+    int my_log2(const int v)
     {
-        long k = N, i = 0;
+        int k = v, i = 0;
         while(k) {
             k >>= 1;
             i++;
@@ -14,49 +14,50 @@ namespace
         return i - 1;
     }
 
-    long rev_bits(long N, long n)
+    int rev_bits(const int mb, const int v)
     {
-        long p = 0;
-        for(long ii=1; ii<=log2(N); ii++) {
-            if(n & (1 << (log2(N) - ii))) {
-                p |= 1 << (ii - 1);
+        const int l2mb = my_log2(mb);
+        int p = 0;
+        for(int i=1; i<=l2mb; i++) {
+            if(v & (1 << (l2mb - i))) {
+                p |= 1 << (i - 1);
             }
         }
         return p;
     }
 
-    void rev_arr(cpvarray_t& f1, long N)
+    void rev_arr(cpvarray_t& buf, const int count)
     {
-        cpvarray_t f2(N);
-        for(long ii=0; ii<N; ii++) {
-            f2[ii] = f1[rev_bits(N, ii)];
+        cpvarray_t tmp(count);
+        for(int i=0; i<count; i++) {
+            tmp[i] = buf[rev_bits(count, i)];
         }
-        for(long ii=0; ii<N; ii++) {
-            f1[ii] = f2[ii];
+        for(int i=0; i<count; i++) {
+            buf[i] = tmp[i];
         }
     }
 }
 
-void fft(cpvarray_t& f, long N)
+void fft(cpvarray_t& buf, const int count)
 {
-    rev_arr(f, N);
+    rev_arr(buf, count);
 
-    cpvarray_t W(N/2);
+    cpvarray_t W(count/2);
     W[0] = 1;
-    W[1] = std::polar(1.0, (-2.0 * M_PI) / N);
-    for(long ii= 2; ii<N/2; ii++) {
-        W[ii] = pow(W[1], ii);
+    W[1] = std::polar(1.0, (-2.0 * M_PI) / count);
+    for(int i=2, imax=count/2; i<imax; i++) {
+        W[i] = pow(W[1], i);
     }
 
-    long n = 1;
-    long a = N / 2;
-    for(long jj=0; jj<log2(N); jj++) {
-        for(long ii=0; ii<N; ii++) {
-            if(!(ii & n)) {
-                complex_t temp = f[ii];
-                complex_t Temp = W[(ii * a) % (n * a)] * f[ii + n];
-                f[ii] = temp + Temp;
-                f[ii + n] = temp - Temp;
+    int n = 1;
+    int a = count / 2;
+    for(int j=0, jmax=my_log2(count); j<jmax; j++) {
+        for(int i=0; i<count; i++) {
+            if(!(i & n)) {
+                complex_t tmp1 = buf[i];
+                complex_t tmp2 = W[(i * a) % (n * a)] * buf[i + n];
+                buf[i] = tmp1 + tmp2;
+                buf[i + n] = tmp1 - tmp2;
             }
         }
         n *= 2;

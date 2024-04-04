@@ -68,27 +68,27 @@ long LoraPhy::dechirp(const cpvarray_t& sig, const long pos, const bool invert) 
     const cpvarray_t& chp = invert ? this->upchirp : this->downchirp;
 
     // copy the chirped signal into a 2x buffer for fft proc
-    const long fft_len = 2 * this->sps;
+    const int fft_len = 2 * this->sps;
     cpvarray_t buf(fft_len);
-    for(long ii=0; ii < this->sps; ii++) {
+    for(int ii=0; ii < this->sps; ii++) {
         buf[ii] = chp[ii] * sig[pos + ii];
     }
 
     fft(buf, fft_len);
-    //printf("fft:\n");
+    //printf("fft %ld:\n", pos / this->sps);
     //LoraPhy::print_array(buf, 16);
 
     // find max fft bin
-    long mbin = 0;
+    int mbin = 0;
     complex_t::value_type mabs = 0.0;
-    for(long ii=0; ii < this->sps; ii++) {
+    for(int ii=0; ii < this->sps; ii++) {
         const complex_t::value_type abs = std::abs(buf[ii]) + std::abs(buf[this->sps + ii]);
         if(abs > mabs) {
              mbin = ii;
              mabs = abs;
          }
     }
-    //printf("%ld) ** max bin is: %ld  (val: %f)\n", pos, mbin, mabs);
+    //printf("%ld) max bin is: %d  (val: %f)\n", pos, mbin, mabs);
 
     return mbin;
 }
