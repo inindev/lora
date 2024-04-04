@@ -10,10 +10,15 @@ CFLAGS = -Wall -g -std=c++17
 
 TARGET = loraphy
  
-loraphy: main.o LoraPhy.o
+$(TARGET): main.o LoraPhy.o
 	$(CC) $(CFLAGS) -o $(TARGET) main.o LoraPhy.o
 
-main.o: main.cpp LoraPhy.cpp
+main.o: main.cpp LoraPhy.h
 	$(CC) $(CFLAGS) -c main.cpp
 
-LoraPhy.o: LoraPhy.h types.h
+LoraPhy.o: LoraPhy.cpp LoraPhy.h types.h
+	$(CC) $(CFLAGS) -c LoraPhy.cpp
+
+.PHONY: clean
+clean:
+	rm -f *.o $(TARGET)
