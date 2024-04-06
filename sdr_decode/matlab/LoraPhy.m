@@ -1,10 +1,9 @@
 
 % a copy of: https://github.com/jkadbear/LoRaPHY/blob/master/LoRaPHY.m
-% rewritten to simplify and make it easier for me to read
-%
+% refactored and simplified to make it easier for me to read
 
-% phy = LoraPhy(7, 125e3, 'lora_923.3_sample/lora.raw', 1024e3, true)
-% phy.detect_preamble(1)
+% phy = LoraPhy(7, 125e3, 'lora_923.3_sample/lora.raw', 1024e3)
+% phy.detect_preamble(1, true)
 % for jj = (1:256); phy.detect(jj); end
 % phy.plot_symbols(1024, 13)
 
@@ -61,7 +60,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             this.downchirp = chirp(t, this.bw/2, t(end), -this.bw/2, 'linear', 0, 'complex').';
         end
 
-        function x = detect_preamble(this, pos, invert, preamble_len)
+        function [x, netid1, netid2] = detect_preamble(this, pos, invert, preamble_len)
             % DETECT_PREAMBLE(pos, [invert], [preamble_len])
             % input:
             %   pos:           offset from the beginning of signal
@@ -70,6 +69,9 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             % output:
             %    x:  signal position of fft bin0 for the last detected preamble chirp
             x = 0;
+            netid1 = 0;
+            netid2 = 0;
+
             if(pos < 1)
                 return;
             end
@@ -82,28 +84,100 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 preamble_len = this.preamble_len;
             end
 
-            det_count = 0;
+            det_count = 1; % current sample == 1
             fbin_last = 0;
             while(pos <= (length(this.sig) - this.sps))
                 fbin = this.dechirp(pos, invert);
+                %fprintf("%4d) detect_preamble - fbin: %d\n", pos, fbin);
 
                 if(abs(fbin - fbin_last) <= this.ft_det_bins)
                     det_count = det_count + 1;
-                    if(det_count >= preamble_len-1)
+                    if(det_count >= preamble_len)
                         % preamble detected, adjust fft bin to zero
                         if(invert)
-                            x = pos + fbin - 1;               % inverted chirp, non-inverted IQ
+                            x = pos + fbin - 1;             % inverted chirp, non-inverted IQ
                         else
-                            x = pos + (this.sps - fbin) + 1;  % non-inverted chirp, inverted IQ
+                            x = pos + this.sps - fbin + 1;  % non-inverted chirp, inverted IQ
                         end
-                        %fprintf('start:%3d  fbin:%4d  x:%d  *** preamble detected ***\n', start, fbin, x);
+
+                        % read network id
+                        fbin1 = this.dechirp(x+this.sps, invert);
+                        fbin2 = this.dechirp(x+2*this.sps, invert);
+                        if(invert)
+                            fbin1 = this.sps - fbin1 + 1;  % inverted chirp, non-inverted IQ
+                            fbin2 = this.sps - fbin2 + 1;
+                        else
+                            fbin1 = fbin1 - 1;             % non-inverted chirp, inverted IQ
+                            fbin2 = fbin2 - 1;
+                        end
+
+                        netid1 = fbin1 / 2;
+                        netid2 = fbin2 / 2;
+
+                        %fprintf('  *** preamble detected ***  fbin:%4d  x:%d  netid1:%d  netid2:%d\n', fbin, x, netid1, netid2);
                         return;
                     end
                 else
-                    det_count = 0;
+                    det_count = 1;
                 end
 
                 fbin_last = fbin;
+                pos = pos + this.sps;
+            end
+        end
+
+        % look for the start frame delimiter
+        function [sfd, hdr] = detect_sfd(this, pos, invert)
+            sfd = 0;
+            hdr = 0;
+
+            if(pos < 1)
+                return;
+            end
+
+            if(nargin < 3)
+                invert = false;
+            end
+
+            while(pos <= (length(this.sig) - this.sps))
+                [~, mval_up] = this.dechirp(pos, invert);
+                [~, mval_dn] = this.dechirp(pos, ~invert);
+                if mval_dn > mval_up
+                    % downchirp detected
+                    % look for second downchirp at 1.25 sps
+                    [~, mval_up] = this.dechirp(pos + 1.25 * this.sps, invert);
+                    [~, mval_dn] = this.dechirp(pos + 1.25 * this.sps, ~invert);
+                    if mval_dn > mval_up
+                        % second downchirp detected
+                        sfd = pos;
+                        hdr = sfd + 2.25 * this.sps;
+                        return;
+                    end
+                end
+
+                pos = pos + this.sps;
+            end
+        end
+
+        function symbols = decode_header(this, pos, invert)
+            symbols = zeros(8, 1);
+
+            if(nargin < 3)
+                invert = false;
+            end
+
+            for ii = (1:8)
+                fbin = this.dechirp(pos, invert);
+
+                if(invert)
+                    fbin = this.sps - fbin + 1;  % inverted chirp, non-inverted IQ
+                else
+                    fbin = fbin - 1;             % non-inverted chirp, inverted IQ
+                end
+
+                symbols(ii) = fbin / 2;
+                %fprintf("%d) pos:%4d  fbin:%3d  -->  sym:%3d\n", ii, pos, fbin, symbols(ii));
+
                 pos = pos + this.sps;
             end
         end
@@ -130,10 +204,11 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
 
             ft = fft(this.sig(pos:pos+this.sps-1) .* chp, this.ft_len);
             ft_pow = abs(ft(1:this.ft_bins)) + abs(ft(this.ft_len - this.ft_bins+1:this.ft_len));
+
             [mval, fbin] = max(ft_pow);
         end
 
-        function plot_symbols(this, pos, sym_count)
+        function plot_symbols(this, pos, sym_count, use_legend)
             % PLOT_SYMBOLS(this, pos, [sym_count])
             %   pos:        offset from the beginning of signal
             %   sym_count:  the number of symbols to plot (default 9)
@@ -144,14 +219,17 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             if(nargin < 3)
                 sym_count = 9;
             end
+            if(nargin < 4)
+                use_legend = false;
+            end
 
             close(findobj('type', 'figure', 'number', 1));
             f = figure(1);
             scn = get(0, 'screensize');
             f.Position = [20,400,scn(1,3)-120,680];
-            t = tiledlayout(2, sym_count, 'TileSpacing', 'compact', 'Padding', 'compact');
+            tiledlayout(2, sym_count, 'TileSpacing', 'compact', 'Padding', 'compact');
 
-            axes = zeros(2 * sym_count);
+            axes = zeros(2 * sym_count, 1);
             type = ["up-chirped ", "down-chirped "];
             for cdir = 1:2
                 tpos = pos;
@@ -167,14 +245,29 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     axes((cdir-1)*sym_count + jj) = ax;
 
                     hold on
+                    mval = int8(mval);
                     plot(fbin, mval, 'rd');
-                    %fprintf('plot(%d,%d) fbin = %d\n', cdir, jj, fbin);
+                    if(use_legend)
+                        legend('', sprintf('%d,%d', fbin, mval));
+                    else
+                        if(fbin > this.sps/2)
+                            txtx = fbin - 120;
+                        else
+                            txtx = fbin + 20;
+                        end
+                        text(txtx, mval, sprintf('%d,%d', fbin, mval));
+                    end
+                    %fprintf('%4d) plot(%d,%2d)  fbin:%3d  sym:%3d\n', tpos, cdir, jj, fbin, int8((fbin-1)/2));
 
                     tpos = tpos + this.sps;
                 end
             end
 
             linkaxes(axes, 'xy');
+        end
+
+        function plot_symbol_pspec(this, pos)
+            pspectrum(this.sig(pos:pos+this.sps), this.fs, 'spectrogram', Reassign=true);
         end
     end
 
