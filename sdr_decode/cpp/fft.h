@@ -26,7 +26,7 @@ namespace
         return p;
     }
 
-    void rev_arr(cpvarray_t& buf, const int count)
+    void dist_arr(cpvarray_t& buf, const int count)
     {
         cpvarray_t tmp(count);
         for(int i=0; i<count; i++) {
@@ -40,7 +40,7 @@ namespace
 
 void fft(cpvarray_t& buf, const int count)
 {
-    rev_arr(buf, count);
+    dist_arr(buf, count);
 
     cpvarray_t W(count/2);
     W[0] = 1;

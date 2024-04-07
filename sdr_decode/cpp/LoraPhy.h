@@ -5,6 +5,9 @@
 
 #include "types.h"
 
+typedef std::pair<int, int> chirpval_t;
+typedef std::pair<long, long> sfdinfo_t;
+
 
 struct LoraPhy
 {
@@ -14,11 +17,13 @@ struct LoraPhy
     void init(const int sf, const int bw, const int plen);
 
     long detect_preamble(const cpvarray_t& sig, const long pos=0, const bool invert=false);
-    long dechirp(const cpvarray_t& sig, const long pos=0, const bool invert=false);
+    sfdinfo_t detect_sfd(const cpvarray_t& sig, const long pos=0, const bool invert=false);
+
+    chirpval_t dechirp(const cpvarray_t& sig, const long pos=0, const bool invert=false);
 
     static void chirp(const int sps, const int fs, const int bw, const bool is_downchirp, cpvarray_t& outbuf);
 
-    static int load(const std::string filename, cpvarray_t& buf);
+    static int load(const std::string filename, cpvarray_t& buf, const bool swap_iq=false);
     static int save(const std::string filename, const cpvarray_t& buf);
     static void print_array(const cpvarray_t& buf, const long num=0);
 

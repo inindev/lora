@@ -36,22 +36,36 @@ long LoraPhy::detect_preamble(const cpvarray_t& sig, const long pos, const bool 
     }
 
     int det_count = 1;  // current sample == 1
+    int fbin_last = 0;
     long pos_offs = 0;
-    long fbin_last = 0;
     for(long ii=pos; ii < sig.size()-this->sps; ii += this->sps) {
-        long fbin = this->dechirp(sig, ii, invert);
-        //printf("%ld) detect_preamble - fbin: %ld\n", ii, fbin);
+        const int fbin = this->dechirp(sig, ii, invert).first;
+        //printf("%4ld) detect_preamble - fbin: %d\n", ii, fbin);
 
         if(abs(fbin - fbin_last) <= this->ft_det_bins) {
             det_count++;
             if(det_count >= this->plen) {
                 // preamble detected, adjust fft bin to zero
                 if(invert) {
-                    pos_offs = ii + fbin;                // inverted chirp, non-inverted IQ
+                    pos_offs = ii + fbin;              // inverted chirp, non-inverted IQ
                 } else {
-                    pos_offs = ii + (this->sps - fbin);  // non-inverted chirp, inverted IQ
+                    pos_offs = ii + this->sps - fbin;  // non-inverted chirp, inverted IQ
                 }
-                //printf("start:%ld  fbin:%ld  pos_offs:%ld  *** preamble detected ***\n", pos, fbin, pos_offs);
+
+                // read network id
+                int fbin1 = this->dechirp(sig, pos_offs+this->sps, invert).first;
+                int fbin2 = this->dechirp(sig, pos_offs+2*this->sps, invert).first;
+                if(invert) {
+                    fbin1 = this->sps - fbin1;  // inverted chirp, non-inverted IQ
+                    fbin2 = this->sps - fbin2;
+                }
+                // non-inverted chirp, inverted IQ needs no adjustment
+
+                const int netid1 = fbin1 / 2;
+                const int netid2 = fbin2 / 2;
+                (void)netid1; (void)netid2; // no warn
+
+                //printf("  *** preamble detected ***  fbin:%4d  pos_offs:%ld  netid1:%d  netid2:%d\n", fbin, pos_offs, netid1, netid2);
                 return pos_offs;
             }
         } else {
@@ -64,7 +78,34 @@ long LoraPhy::detect_preamble(const cpvarray_t& sig, const long pos, const bool 
     return -1;  // preamble not detected
 }
 
-long LoraPhy::dechirp(const cpvarray_t& sig, const long pos, const bool invert) {
+// look for the start of frame delimiter
+sfdinfo_t LoraPhy::detect_sfd(const cpvarray_t& sig, const long pos, const bool invert) {
+    if(pos < 0) {
+        printf("LoraPhy::detect_sfd - invalid offset (pos = %ld)\n", pos);
+        return sfdinfo_t(-1, -1);
+    }
+
+    for(long ii=pos; ii < sig.size()-this->sps; ii += this->sps) {
+        int mval_up = dechirp(sig, ii, invert).second;
+        int mval_dn = dechirp(sig, ii, !invert).second;
+        if(mval_dn > mval_up) {
+            // downchirp detected
+            // look for second downchirp at 1.25 sps
+            mval_up = dechirp(sig, ii + 1.25 * this->sps, invert).second;
+            mval_dn = dechirp(sig, ii + 1.25 * this->sps, !invert).second;
+            if(mval_dn > mval_up) {
+                // second downchirp detected
+                const long sfd = ii;
+                const long hdr = sfd + 2.25 * this->sps;  // the sfd is 2.25 symbols long
+                return sfdinfo_t(sfd, hdr);
+            }
+        }
+    }
+
+    return sfdinfo_t(-1, -1);  // sfd not detected
+}
+
+chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const long pos, const bool invert) {
     const cpvarray_t& chp = invert ? this->upchirp : this->downchirp;
 
     // copy the chirped signal into a 2x buffer for fft proc
@@ -90,7 +131,7 @@ long LoraPhy::dechirp(const cpvarray_t& sig, const long pos, const bool invert) 
     }
     //printf("%ld) max bin is: %d  (val: %f)\n", pos, mbin, mabs);
 
-    return mbin;
+    return chirpval_t(mbin, static_cast<int>(mabs));
 }
 
 void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_downchirp, cpvarray_t& outbuf) {
@@ -113,7 +154,7 @@ void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_dow
     outbuf.swap(buf);
 }
 
-int LoraPhy::load(const std::string filename, cpvarray_t& outbuf)
+int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swap_iq)
 {
     FILE* pf = fopen(filename.c_str(), "rb");
     if(pf == NULL) {
@@ -143,7 +184,15 @@ int LoraPhy::load(const std::string filename, cpvarray_t& outbuf)
         return -2;
     }
 
-    outbuf.swap(buf);
+    if(swap_iq) {
+        // swap I and Q channels
+        outbuf.resize(count);
+        for(long ii=0; ii<count; ii++) {
+            outbuf[ii] = complex_t(buf[ii].imag(), buf[ii].real());
+        }
+    } else {
+        outbuf.swap(buf);
+    }
 
     return 0;  // success
 }
@@ -166,7 +215,7 @@ int LoraPhy::save(const std::string filename, const cpvarray_t& buf) {
 }
 
 void LoraPhy::print_array(const cpvarray_t& buf, const long num) {
-    const long count = (num==0) ? buf.size() : num;
+    const long count = (num==0 || num>buf.size()) ? buf.size() : num;
     for(long ii=0; ii < count; ++ii) {
          printf("  %14.10f %+14.10fi  [%11.8f]\n", buf[ii].real(), buf[ii].imag(), std::abs(buf[ii]));
     }
