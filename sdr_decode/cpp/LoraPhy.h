@@ -16,7 +16,7 @@ struct LoraPhy
 
     void init(const int sf, const int bw, const int plen);
 
-    long detect_preamble(const cpvarray_t& sig, const long pos=0, const bool invert=false);
+    std::tuple<long, int, int> detect_preamble(const cpvarray_t& sig, const long pos=0, const bool invert=false);
     sfdinfo_t detect_sfd(const cpvarray_t& sig, const long pos=0, const bool invert=false);
 
     chirpval_t dechirp(const cpvarray_t& sig, const long pos=0, const bool invert=false);

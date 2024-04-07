@@ -29,10 +29,10 @@ void LoraPhy::init(const int sf, const int bw, const int plen)
     //LoraPhy::print_array(this->downchirp, 16);
 }
 
-long LoraPhy::detect_preamble(const cpvarray_t& sig, const long pos, const bool invert) {
+std::tuple<long, int, int> LoraPhy::detect_preamble(const cpvarray_t& sig, const long pos, const bool invert) {
     if(pos < 0) {
         printf("LoraPhy::detect_preamble - invalid offset (pos = %ld)\n", pos);
-        return -1;
+        return {-1, -1, -1};
     }
 
     int det_count = 1;  // current sample == 1
@@ -63,10 +63,9 @@ long LoraPhy::detect_preamble(const cpvarray_t& sig, const long pos, const bool 
 
                 const int netid1 = fbin1 / 2;
                 const int netid2 = fbin2 / 2;
-                (void)netid1; (void)netid2; // no warn
 
                 //printf("  *** preamble detected ***  fbin:%4d  pos_offs:%ld  netid1:%d  netid2:%d\n", fbin, pos_offs, netid1, netid2);
-                return pos_offs;
+                return {pos_offs, netid1, netid2};
             }
         } else {
             det_count = 1;
@@ -75,7 +74,7 @@ long LoraPhy::detect_preamble(const cpvarray_t& sig, const long pos, const bool 
         fbin_last = fbin;
     }
 
-    return -1;  // preamble not detected
+    return {-1, -1, -1};  // preamble not detected
 }
 
 // look for the start of frame delimiter
