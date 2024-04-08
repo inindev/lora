@@ -28,13 +28,17 @@ int main(void) {
     }
     printf("detect_preamble - pos: %ld  netid1: %d  netid2: %d\n", ppos, netid1, netid2);
 
-    sfdinfo_t sfd_info = phy.detect_sfd(sig, ppos, invert);
-    if(sfd_info.first < 0) {
+    const auto [sfd, hdr] = phy.detect_sfd(sig, ppos, invert);
+    if(sfd < 0) {
         printf("sfd not detected\n");
         return -2;
     }
-    printf("sfd pos: %ld  hdr pos: %ld\n", sfd_info.first, sfd_info.second);
+    printf("sfd pos: %ld  hdr pos: %ld\n", sfd, hdr);
+
+    if(!phy.decode_header(sig, hdr, invert)) {
+        printf("failed to decode header\n");
+        return -3;
+    }
 
     return 0;
 }
-

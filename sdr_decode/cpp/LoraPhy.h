@@ -2,6 +2,7 @@
 // copyright (C) 2024, John Clark <inindev@gmail.com>
 
 #include <string>
+#include <stdint.h>
 
 #include "types.h"
 
@@ -18,9 +19,10 @@ struct LoraPhy
 
     std::tuple<long, int, int> detect_preamble(const cpvarray_t& sig, const long pos=0, const bool invert=false);
     sfdinfo_t detect_sfd(const cpvarray_t& sig, const long pos=0, const bool invert=false);
+    bool decode_header(const cpvarray_t& sig, const long pos, const bool invert=false);
+    void diag_deinterleave(const uint32_t symbols_g[8], const uint32_t bits, uint32_t* codewords);
 
     chirpval_t dechirp(const cpvarray_t& sig, const long pos=0, const bool invert=false);
-
     static void chirp(const int sps, const int fs, const int bw, const bool is_downchirp, cpvarray_t& outbuf);
 
     static int load(const std::string filename, cpvarray_t& buf, const bool swap_iq=false);

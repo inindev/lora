@@ -104,6 +104,64 @@ sfdinfo_t LoraPhy::detect_sfd(const cpvarray_t& sig, const long pos, const bool 
     return sfdinfo_t(-1, -1);  // sfd not detected
 }
 
+bool LoraPhy::decode_header(const cpvarray_t& sig, const long pos, const bool invert) {
+    uint32_t symbols[8];
+    for(int ii=0; ii<8; ii++) {
+        int fbin = this->dechirp(sig, pos+ii*this->sps, invert).first;
+        printf("%4d) decode_header - fbin: %d\n", ii, fbin);
+
+        if(invert) {
+            fbin = this->sps - fbin;  // inverted chirp, non-inverted IQ
+        }
+        // non-inverted chirp, inverted IQ needs no adjustment
+
+        symbols[ii] = fbin / 2;
+        printf("symbols[%d]: %d\n", ii, symbols[ii]);
+    }
+
+    // gray decoding
+    uint32_t symbols_g[8];
+    for(int ii=0; ii<8; ii++) {
+        symbols_g[ii] = (symbols[ii] >> 2) ^ (symbols[ii] >> 3);
+        printf("symbols_g[%d]: %d\n", ii, symbols_g[ii]);
+    }
+
+    // deinterleave
+    const uint32_t bits = this->sf-2;
+    uint32_t codewords[bits];
+    diag_deinterleave(symbols_g, bits, codewords);
+    for(int ii=0; ii<bits; ii++) {
+        printf("%4d) cw: %d\n", ii, codewords[ii]);
+    }
+
+    return false;
+}
+
+// void LoraPhy::gray_decode(const uint32_t symbols[8], uint32_t* symbols_g) {
+//     for(int ii=0; ii<8; ii++) {
+//         symbols_g[ii] = (symbols[ii] >> 2) ^ (symbols[ii] >> 3);
+//         printf("symbols_g[%d]: %d\n", ii, symbols_g[ii]);
+//     }
+// }
+
+void LoraPhy::diag_deinterleave(const uint32_t symbols_g[8], const uint32_t bits, uint32_t* codewords) {
+    std::fill(codewords, codewords+bits, 0);
+    for(int ii=0; ii<8; ii++) {                 // 154 0 163 92 0
+        // |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
+        //  0 |1  0  1  0 : 0| 1  0  1  0  <<1  ->  1  0  1  0  0
+        //  1  0 |0  0  0 : 1  0| 0  0  0  <<2  ->  0  0  0  1  0
+        //  0  1  0 |1  0 : 0  1  0| 1  0  <<3  ->  1  0  0  1  0
+        //  0  0  1  0 |1 : 0  0  1  0| 1  <<4  ->  1  0  0  1  0
+        // |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
+        //  0 |0  0  0  1 : 0| 0  0  0  1  <<1  ->  0  0  0  1  0
+        //  0  0 |1  0  1 ; 0  0| 1  0  1  <<2  ->  1  0  1  0  0
+        const uint32_t sym = ((symbols_g[ii]<<bits | symbols_g[ii]) << (ii%bits)) >> bits;
+        for(int jj=0; jj<bits; jj++) {
+            codewords[jj] |= (((sym >> jj) & 1) << ii);
+        }
+    }
+}
+
 chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const long pos, const bool invert) {
     const cpvarray_t& chp = invert ? this->upchirp : this->downchirp;
 
