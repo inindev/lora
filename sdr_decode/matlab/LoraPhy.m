@@ -1,10 +1,13 @@
 
-% a copy of: https://github.com/jkadbear/LoRaPHY/blob/master/LoRaPHY.m
-% refactored and simplified to make it easier for me to read
+% lora signal decoder
+% https://dl.acm.org/doi/10.1145/3546869
+% https://github.com/jkadbear/LoRaPHY/blob/master/LoRaPHY.m
+% https://github.com/tapparelj/gr-lora_sdr/blob/master/lib
 
 % phy = LoraPhy(7, 125e3, 'lora_923.3_sample/lora.raw', 1024e3)
-% phy.detect_preamble(1, true)
-% for jj = (1:256); phy.detect(jj); end
+% [x, netid1, netid2] = phy.detect_preamble();
+% [sfd, hdr] = phy.detect_sfd(x);
+% [payload_len, cr, crc, is_valid] = phy.decode_header(hdr);
 % phy.plot_symbols(1024, 13)
 
 classdef LoraPhy < handle & matlab.mixin.Copyable
@@ -12,7 +15,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
         sf;            % spreading factor (7,8,9,10,11,12)
         bw;            % bandwidth 125 kHz
         fs;            % sample rate: 2x bw = 250 kHz
-        cr;            % code rate: (1:4/5 2:4/6 3:4/7 4:4/8)
+        cr;            % coding rate: (1:4/5 2:4/6 3:4/7 4:4/8)
         preamble_len;  % preamble length
         ft_det_bins;   % num fft detect bins
     end
@@ -28,16 +31,16 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
     end
 
     methods
-        function this = LoraPhy(sf, bw, filename, file_fs, invert_iq)
+        function this = LoraPhy(sf, bw, filename, file_fs, swap_iq)
             % LoraPhy
             if(nargin < 5)
-                invert_iq = false;
+                swap_iq = false;
             end
 
             this.sf = sf;             % spreading factor (7,8,9,10,11,12)
             this.bw = bw;             % bandwidth 125 kHz
             this.fs = bw * 2;         % sample rate: 2x bw = 250 kHz
-            this.cr = 1;              % code rate: (1:4/5 2:4/6 3:4/7 4:4/8)
+            this.cr = 1;              % coding rate: (1:4/5 2:4/6 3:4/7 4:4/8)
             this.preamble_len = 8;    % preamble length
             this.ft_det_bins = 4;     % num fft detect bins
 
@@ -49,9 +52,9 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             this.sig = LoraPhy.read(filename);
             this.sig = lowpass(this.sig, bw/2, file_fs);
             this.sig = resample(this.sig, this.fs, file_fs);  % resample signal @ 2x bandwidth
-            if(invert_iq)
+            if(swap_iq)
                 % swap I and Q channels
-                this.sig = imag(this.sig) + 1j * real(this.sig);
+                this.sig = imag(this.sig) + 1i * real(this.sig);
             end
 
             t = (0:this.sps-1) / this.fs;
@@ -60,7 +63,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             this.downchirp = chirp(t, this.bw/2, t(end), -this.bw/2, 'linear', 0, 'complex').';
         end
 
-        function [x, netid1, netid2] = detect_preamble(this, pos, invert, preamble_len)
+        function [x, netid1, netid2] = detect_preamble(this, pos, preamble_len, invert)
             % DETECT_PREAMBLE(pos, [invert], [preamble_len])
             % input:
             %   pos:           offset from the beginning of signal
@@ -68,27 +71,21 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             %   preamble_len:  preamble length
             % output:
             %    x:  signal position of fft bin0 for the last detected preamble chirp
-            x = 0;
-            netid1 = 0;
-            netid2 = 0;
-
-            if(pos < 1)
-                return;
+            if((nargin < 2) || (pos < 1))
+                pos = 1;
             end
-
             if(nargin < 3)
-                invert = false;
-            end
-
-            if(nargin < 4)
                 preamble_len = this.preamble_len;
+            end
+            if(nargin < 4)
+                invert = false;
             end
 
             det_count = 1; % current sample == 1
             fbin_last = 0;
             while(pos <= (length(this.sig) - this.sps))
                 fbin = this.dechirp(pos, invert);
-                %fprintf("%4d) detect_preamble - fbin: %d\n", pos, fbin);
+                %fprintf('%4d) detect_preamble - fbin: %d\n', pos, fbin);
 
                 if(abs(fbin - fbin_last) <= this.ft_det_bins)
                     det_count = det_count + 1;
@@ -126,7 +123,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             end
         end
 
-        % look for the start frame delimiter
+        % look for the start of frame delimiter
         function [sfd, hdr] = detect_sfd(this, pos, invert)
             sfd = 0;
             hdr = 0;
@@ -150,7 +147,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     if mval_dn > mval_up
                         % second downchirp detected
                         sfd = pos;
-                        hdr = sfd + 2.25 * this.sps;
+                        hdr = sfd + 2.25 * this.sps;  % the sfd is 2.25 symbols long
                         return;
                     end
                 end
@@ -159,14 +156,17 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             end
         end
 
-        function symbols = decode_header(this, pos, invert)
-            symbols = zeros(8, 1);
+        function [payload_len, cr, crc, is_valid] = decode_header(this, pos, invert)
+            if(pos < 1)
+                return;
+            end
 
             if(nargin < 3)
                 invert = false;
             end
 
-            for ii = (1:8)
+            symbols = zeros(8, 1);
+            for ii = 1:8
                 fbin = this.dechirp(pos, invert);
 
                 if(invert)
@@ -176,9 +176,124 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 end
 
                 symbols(ii) = fbin / 2;
-                %fprintf("%d) pos:%4d  fbin:%3d  -->  sym:%3d\n", ii, pos, fbin, symbols(ii));
+                %fprintf('%d) pos:%4d  fbin:%3d  -->  sym:%3d\n', ii, pos, fbin, symbols(ii));
 
                 pos = pos + this.sps;
+            end
+
+            % gray decoding
+            symbols_g = this.gray_decode(symbols);
+
+            % deinterleave
+            codewords = this.diag_deinterleave(symbols_g, this.sf-2);
+
+            % hamming decode
+            header = this.hamming_decode(codewords, 8);
+
+            % parse header
+            payload_len = bitor(bitshift(header(1), 4), header(2));
+            crc = bitand(header(3), 1);
+            cr = bitshift(header(3), -1);
+
+            % validate the header checksum
+            header_checksum = [bitand(header(4), 1); int2bit(header(5), 4)];
+            header_checksum_calc = this.calc_header_csum(header);
+            is_valid = all(header_checksum == header_checksum_calc);
+        end
+
+        function hcsum = calc_header_csum(this, header)
+            hdata = int2bit(header(1:3)', 4, false)';
+
+            hcsum = zeros(5,1,'uint8');
+            hcsum(5) = this.freduce(@xor, [hdata(1,4), hdata(1,3), hdata(1,2), hdata(1,1)]);
+            hcsum(4) = this.freduce(@xor, [hdata(1,4), hdata(2,4), hdata(2,3), hdata(2,2), hdata(3,1)]);
+            hcsum(3) = this.freduce(@xor, [hdata(1,3), hdata(2,4), hdata(2,1), hdata(3,4), hdata(3,2)]);
+            hcsum(2) = this.freduce(@xor, [hdata(1,2), hdata(2,3), hdata(2,1), hdata(3,3), hdata(3,2), hdata(3,1)]);
+            hcsum(1) = this.freduce(@xor, [hdata(1,1), hdata(2,2), hdata(3,4), hdata(3,3), hdata(3,2), hdata(3,1)]);
+        end
+
+        function symbols_g = gray_decode(this, symbols)
+            sym_b2 = bitshift(uint16(symbols), -2);
+            sym_b3 = bitshift(sym_b2, -1);
+            symbols_g = bitxor(sym_b2, sym_b3);
+        end
+
+        function codewords = diag_deinterleave(this, symbols_g, bits)
+            % DIAG_DEINTERLEAVE(symbols_g, bits)
+            %   perform circular left shift by n bits
+            %                                           154 0 163 92 0
+            %   |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
+            %    0 |1  0  1  0 : 0| 1  0  1  0  <<1  ->  1  0  1  0  0
+            %    1  0 |0  0  0 : 1  0| 0  0  0  <<2  ->  0  0  0  1  0
+            %    0  1  0 |1  0 : 0  1  0| 1  0  <<3  ->  1  0  0  1  0
+            %    0  0  1  0 |1 : 0  0  1  0| 1  <<4  ->  1  0  0  1  0
+            %   |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
+            %    0 |0  0  0  1 : 0| 0  0  0  1  <<1  ->  0  0  0  1  0
+            %    0  0 |1  0  1 ; 0  0| 1  0  1  <<2  ->  1  0  1  0  0
+            codewords = bit2int([
+                circshift(int2bit(symbols_g(8), bits, false)', 7);
+                circshift(int2bit(symbols_g(7), bits, false)', 6);
+                circshift(int2bit(symbols_g(6), bits, false)', 5);
+                circshift(int2bit(symbols_g(5), bits, false)', 4);
+                circshift(int2bit(symbols_g(4), bits, false)', 3);
+                circshift(int2bit(symbols_g(3), bits, false)', 2);
+                circshift(int2bit(symbols_g(2), bits, false)', 1);
+                circshift(int2bit(symbols_g(1), bits, false)', 0);
+            ], 8)';
+        end
+        % function codewords = diag_deinterleave(this, symbols_g, bits)
+        %     temp = zeros(8,1);
+        %     for ii = (8:1)
+        %         temp(ii,:) = circshift(int2bit(symbols_g(ii), bits, false)', ii-1);
+        %     end
+        %     codewords = bit2int(temp,8);
+        % end
+
+        % TODO: support CR 4/7, 4/6, and 4/5 (not needed to decode header)
+        function data = hamming_decode(this, codewords, cr)
+            % HAMMING_DECODE(codewords, cr)
+            %
+            %           parity    data
+            %  cr 4/8  p3p2p1p0 d3d2d1d0
+            %  cr 4/7    p2p1p0 d3d2d1d0
+            %  cr 4/6      p1p0 d3d2d1d0
+            %  cr 4/5        p4 d3d2d1d0
+            %
+            %    p0 = d0 ^ d1 ^ d2
+            %    p1 = d1 ^ d2 ^ d3
+            %    p2 = d0 ^ d1 ^ d3
+            %    p3 = d0 ^ d2 ^ d3
+            %    p4 = d0 ^ d1 ^ d2 ^ d3
+            data = bitand(codewords, 0x0f);
+            parity = bitand(bitshift(codewords, -4), 0x0f);
+
+            % calculate parity
+            d0 = bitand(data, 1);
+            d1 = bitand(bitshift(data, -1), 1);
+            d2 = bitand(bitshift(data, -2), 1);
+            d3 = bitand(bitshift(data, -3), 1);
+
+            p0 = bitxor(d0, bitxor(d1, d2));
+            p1 = bitxor(d1, bitxor(d2, d3));
+            p2 = bitxor(d0, bitxor(d1, d3));
+            p3 = bitxor(d0, bitxor(d2, d3));
+            %p4 = bitxor(bitxor(d0, d1), bitxor(d2, d3));  % CR 4/5
+
+            pcalc = bitor(bitor(bitshift(p3, 3), bitshift(p2, 2)), bitor(bitshift(p1, 1), p0));
+
+            % check / repair data
+            for ii = 1:length(data)
+                perr = bitxor(parity(ii), pcalc(ii));
+                if(perr)
+                    % repair data
+                    be = bitxor(perr, 0x0f);
+                    if(ismember(be, [1, 2, 4, 8]))
+                        data(ii) = bitxor(data(ii), be);
+                        fprintf("parity data correction - data elem:%d  bit: %d  repaired data: %d\n", ii, be, data(ii));
+                    else
+                        fprintf(" !!!! unrecoverable parity error !!!! - data elem:%d  bit: %d\n", ii, be);
+                    end
+                end
             end
         end
 
@@ -266,12 +381,25 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             linkaxes(axes, 'xy');
         end
 
-        function plot_symbol_pspec(this, pos)
-            pspectrum(this.sig(pos:pos+this.sps), this.fs, 'spectrogram', Reassign=true);
+        function plot_symbol_pspec(this, pos, count)
+            if(nargin < 3)
+                count = 1;
+            end
+
+            pspectrum(this.sig(pos:pos+this.sps*count), this.fs, 'spectrogram', Reassign=true);
         end
     end
 
     methods(Static)
+        function v = freduce(f, a)
+            % FREDUCE(f, a)
+            %   reduce the array 'a' using the function 'f'
+            v = a(1);
+            for ii = 2:length(a)
+                v = f(v, a(ii));
+            end
+        end
+
         function v = read(filename, count)
             % READ(filename, [count])
             %   open filename and return the contents as a column vector,
@@ -319,4 +447,3 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
         end
     end
 end
-
