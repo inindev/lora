@@ -71,6 +71,10 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             %   preamble_len:  preamble length
             % output:
             %    x:  signal position of fft bin0 for the last detected preamble chirp
+            x = 0;
+            netid1 = 0;
+            netid2 = 0;
+
             if((nargin < 2) || (pos < 1))
                 pos = 1;
             end
@@ -85,7 +89,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             fbin_last = 0;
             while(pos <= (length(this.sig) - this.sps))
                 fbin = this.dechirp(pos, invert);
-                %fprintf('%4d) detect_preamble - fbin: %d\n', pos, fbin);
+                %fprintf('%4d) detect_preamble - fbin:%d\n', pos, fbin);
 
                 if(abs(fbin - fbin_last) <= this.ft_det_bins)
                     det_count = det_count + 1;
@@ -286,12 +290,16 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 perr = bitxor(parity(ii), pcalc(ii));
                 if(perr)
                     % repair data
-                    be = bitxor(perr, 0x0f);
+                    perr = bitxor(perr, 0x0f);
+                    % bit 1->8, bit 8->2, bit 2->1
+                    be = bitor( ...
+                        bitor(bitshift(bitand(perr,0x01),  3),          bitand(perr,0x04)), ...
+                        bitor(bitshift(bitand(perr,0x08), -2), bitshift(bitand(perr,0x02), -1)) );
                     if(ismember(be, [1, 2, 4, 8]))
                         data(ii) = bitxor(data(ii), be);
-                        fprintf("parity data correction - data elem:%d  bit: %d  repaired data: %d\n", ii, be, data(ii));
+                        fprintf("parity data correction - data elem:%d  bit:%d  repaired data:%d\n", ii, be, data(ii));
                     else
-                        fprintf(" !!!! unrecoverable parity error !!!! - data elem:%d  bit: %d\n", ii, be);
+                        fprintf(" !!!! unrecoverable parity error !!!! - data elem:%d  bit:%d\n", ii, be);
                     end
                 end
             end
