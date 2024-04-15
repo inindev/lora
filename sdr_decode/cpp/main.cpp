@@ -1,10 +1,8 @@
 
 #include "LoraPhy.h"
-#include "temp.h"
 
 
 int main(void) {
-
     // test iq / chirp inversion
     const bool test_inv = true;
     const bool swap_iq = !test_inv ? false: true;
@@ -35,10 +33,12 @@ int main(void) {
     }
     printf("sfd pos: %ld  hdr pos: %ld\n", sfd, hdr);
 
-    if(!phy.decode_header(sig, hdr, invert)) {
-        printf("failed to decode header\n");
+    const auto [payload_len, cr, crc, is_valid] = phy.decode_header(sig, hdr, invert);
+    if(!is_valid) {
+        printf("header is invalid\n");
         return -3;
     }
+    printf("header is valid - payload_len: %d  cr: %d  crc: %d\n", payload_len, cr, crc);
 
     return 0;
 }

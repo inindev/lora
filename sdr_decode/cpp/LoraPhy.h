@@ -19,8 +19,10 @@ struct LoraPhy
 
     std::tuple<long, int, int> detect_preamble(const cpvarray_t& sig, const long pos=0, const bool invert=false);
     sfdinfo_t detect_sfd(const cpvarray_t& sig, const long pos=0, const bool invert=false);
-    bool decode_header(const cpvarray_t& sig, const long pos, const bool invert=false);
-    void diag_deinterleave(const uint32_t symbols_g[8], const uint32_t bits, uint32_t* codewords);
+    std::tuple<uint8_t, uint8_t, uint8_t, bool> decode_header(const cpvarray_t& sig, const long pos, const bool invert=false);
+    uint8_t calc_header_csum(const uint8_t* header);
+    void hamming_decode(const uint8_t* codewords, const uint8_t codewords_count, uint8_t* header);
+    void diag_deinterleave(const uint8_t symbols_g[8], const uint8_t bits, uint8_t* codewords);
 
     chirpval_t dechirp(const cpvarray_t& sig, const long pos=0, const bool invert=false);
     static void chirp(const int sps, const int fs, const int bw, const bool is_downchirp, cpvarray_t& outbuf);

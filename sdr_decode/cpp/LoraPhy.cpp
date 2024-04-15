@@ -6,17 +6,11 @@
 
 
 LoraPhy::LoraPhy(void)
-  : sf(0), bw(0), sps(0), fs(0), plen(0), ft_det_bins(0)
-{
-    printf("default construct\n");
-}
+  : sf(0), bw(0), sps(0), fs(0), plen(0), ft_det_bins(0) { }
 
-LoraPhy::~LoraPhy() {    
-    printf("final destruct\n");
-}
+LoraPhy::~LoraPhy() { }
 
-void LoraPhy::init(const int sf, const int bw, const int plen)
-{
+void LoraPhy::init(const int sf, const int bw, const int plen) {
     this->sf   = sf;
     this->bw   = bw;
     this->sps  = 2 * pow(2, sf);
@@ -104,11 +98,12 @@ sfdinfo_t LoraPhy::detect_sfd(const cpvarray_t& sig, const long pos, const bool 
     return sfdinfo_t(-1, -1);  // sfd not detected
 }
 
-bool LoraPhy::decode_header(const cpvarray_t& sig, const long pos, const bool invert) {
+// <payload_len, cr, crc, is_valid>
+std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const cpvarray_t& sig, const long pos, const bool invert) {
     uint32_t symbols[8];
     for(int ii=0; ii<8; ii++) {
         int fbin = this->dechirp(sig, pos+ii*this->sps, invert).first;
-        printf("%4d) decode_header - fbin: %d\n", ii, fbin);
+        //printf("%4d) decode_header - fbin: %d\n", ii, fbin);
 
         if(invert) {
             fbin = this->sps - fbin;  // inverted chirp, non-inverted IQ
@@ -116,25 +111,97 @@ bool LoraPhy::decode_header(const cpvarray_t& sig, const long pos, const bool in
         // non-inverted chirp, inverted IQ needs no adjustment
 
         symbols[ii] = fbin / 2;
-        printf("symbols[%d]: %d\n", ii, symbols[ii]);
+        //printf("symbols[%d]: %d\n", ii, symbols[ii]);
     }
 
     // gray decoding
-    uint32_t symbols_g[8];
+    uint8_t symbols_g[8];
     for(int ii=0; ii<8; ii++) {
         symbols_g[ii] = (symbols[ii] >> 2) ^ (symbols[ii] >> 3);
-        printf("symbols_g[%d]: %d\n", ii, symbols_g[ii]);
+        //printf("symbols_g[%d]: %d\n", ii, symbols_g[ii]);
     }
 
     // deinterleave
-    const uint32_t bits = this->sf-2;
-    uint32_t codewords[bits];
-    diag_deinterleave(symbols_g, bits, codewords);
-    for(int ii=0; ii<bits; ii++) {
-        printf("%4d) cw: %d\n", ii, codewords[ii]);
-    }
+    uint8_t codewords[5];
+    diag_deinterleave(symbols_g, 5, codewords);
+    //for(int ii=0; ii<5; ii++) {
+    //    printf("%4d) cw: %d\n", ii, codewords[ii]);
+    //}
 
-    return false;
+    // hamming decode
+    uint8_t header[5];
+    hamming_decode(codewords, 5, header);
+
+    // parse header
+    const uint8_t payload_len = (header[0] << 4) | header[1];
+    const uint8_t crc = header[2] & 0x01;
+    const uint8_t cr = header[2] >> 1;
+
+    // validate the header checksum
+    const uint8_t header_checksum = ((header[3] & 0x01) << 4) | header[4];
+    const uint8_t header_checksum_calc = calc_header_csum(header);
+    const bool is_valid = (header_checksum == header_checksum_calc);
+
+    return {payload_len, cr, crc, is_valid};
+}
+
+uint8_t LoraPhy::calc_header_csum(const uint8_t* header) {
+    // header checksum
+    const uint8_t c4 = (header[0] & 0x08) >> 3 ^ (header[0] & 0x04) >> 2 ^ (header[0] & 0x02) >> 1 ^ (header[0] & 0x01);
+    const uint8_t c3 = (header[0] & 0x08) >> 3 ^ (header[1] & 0x08) >> 3 ^ (header[1] & 0x04) >> 2 ^ (header[1] & 0x02) >> 1 ^ (header[2] & 0x01);
+    const uint8_t c2 = (header[0] & 0x04) >> 2 ^ (header[1] & 0x08) >> 3 ^ (header[1] & 0x01) ^ (header[2] & 0x08) >> 3 ^ (header[2] & 0x02) >> 1;
+    const uint8_t c1 = (header[0] & 0x02) >> 1 ^ (header[1] & 0x04) >> 2 ^ (header[1] & 0x01) ^ (header[2] & 0x04) >> 2 ^ (header[2] & 0x02) >> 1 ^ (header[2] & 0x01);
+    const uint8_t c0 = (header[0] & 0x01) ^ (header[1] & 0x02) >> 1 ^ (header[2] & 0x08) >> 3 ^ (header[2] & 0x04) >> 2 ^ (header[2] & 0x02) >> 1 ^ (header[2] & 0x01);
+    const uint8_t csum = (c4 << 4) | (c3 << 3) | (c2 << 2) | (c1 << 1) | c0;
+    return csum;
+}
+
+void LoraPhy::hamming_decode(const uint8_t* codewords, const uint8_t codewords_count, uint8_t* header) {
+    std::fill(header, header+codewords_count, 0);
+
+    //           parity    data
+    //  cr 4/8  p3p2p1p0 d3d2d1d0
+    //  cr 4/7    p2p1p0 d3d2d1d0
+    //  cr 4/6      p1p0 d3d2d1d0
+    //  cr 4/5        p4 d3d2d1d0
+    //
+    //    p0 = d0 ^ d1 ^ d2     ^ = xor
+    //    p1 = d1 ^ d2 ^ d3
+    //    p2 = d0 ^ d1 ^ d3
+    //    p3 = d0 ^ d2 ^ d3
+    //    p4 = d0 ^ d1 ^ d2 ^ d3   (CR=4/5)
+    for(uint8_t i=0; i<codewords_count; i++) {
+        const uint8_t data = codewords[i] & 0x0f;
+        const uint8_t parity = (codewords[i] >> 4) & 0x0f;
+
+        // calculate parity
+        const uint8_t d0 = data & 0x01;
+        const uint8_t d1 = (data >> 1) & 0x01;
+        const uint8_t d2 = (data >> 2) & 0x01;
+        const uint8_t d3 = (data >> 3) & 0x01;
+
+        const uint8_t p0 = d0 ^ d1 ^ d2;
+        const uint8_t p1 = d1 ^ d2 ^ d3;
+        const uint8_t p2 = d0 ^ d1 ^ d3;
+        const uint8_t p3 = d0 ^ d2 ^ d3;
+        //const uint8_t p4 = d0 ^ d1 ^ d2 ^ d3;  // (CR=4/5)
+
+        const uint8_t pcalc = (p3 << 3) | (p2 << 2) | (p1 << 1) | p0;
+        if(parity != pcalc) {
+            // repair data
+            const uint8_t perr = parity ^ pcalc ^ 0x0f;
+            // bit 1->8, bit 8->2, bit 2->1
+            const uint8_t be = ((perr & 0x01) << 3) | (perr & 0x04) | ((perr & 0x08) >> 2) | ((perr & 0x02) >> 1);
+            if((be==1) || (be==2) || (be==4) | (be==8)) {
+                header[i] = data ^ be;
+                printf("parity data correction - data elem:%d  bit: %d  repaired data: %d\n", i, be, header[i]);
+            } else {
+                printf(" !!!! unrecoverable parity error !!!! - data elem:%d  bit: %d\n", i, be);
+            }
+        } else {
+            header[i] = data;
+        }
+    }
 }
 
 // void LoraPhy::gray_decode(const uint32_t symbols[8], uint32_t* symbols_g) {
@@ -144,7 +211,7 @@ bool LoraPhy::decode_header(const cpvarray_t& sig, const long pos, const bool in
 //     }
 // }
 
-void LoraPhy::diag_deinterleave(const uint32_t symbols_g[8], const uint32_t bits, uint32_t* codewords) {
+void LoraPhy::diag_deinterleave(const uint8_t symbols_g[8], const uint8_t bits, uint8_t* codewords) {
     std::fill(codewords, codewords+bits, 0);
     for(int ii=0; ii<8; ii++) {                 // 154 0 163 92 0
         // |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
@@ -155,7 +222,7 @@ void LoraPhy::diag_deinterleave(const uint32_t symbols_g[8], const uint32_t bits
         // |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
         //  0 |0  0  0  1 : 0| 0  0  0  1  <<1  ->  0  0  0  1  0
         //  0  0 |1  0  1 ; 0  0| 1  0  1  <<2  ->  1  0  1  0  0
-        const uint32_t sym = ((symbols_g[ii]<<bits | symbols_g[ii]) << (ii%bits)) >> bits;
+        const uint8_t sym = ((symbols_g[ii]<<bits | symbols_g[ii]) << (ii%bits)) >> bits;
         for(int jj=0; jj<bits; jj++) {
             codewords[jj] |= (((sym >> jj) & 1) << ii);
         }
@@ -211,8 +278,7 @@ void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_dow
     outbuf.swap(buf);
 }
 
-int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swap_iq)
-{
+int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swap_iq) {
     FILE* pf = fopen(filename.c_str(), "rb");
     if(pf == NULL) {
         printf("LoraPhy::load - failed to open binary file for reading\n");
