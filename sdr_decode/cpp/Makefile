@@ -2,6 +2,7 @@
 # copyright (C) 2024, John Clark <inindev@gmail.com>
 
 CC = clang++
+#CC = g++
 
 #  -g    adds debugging information to the executable file
 #  -Wall turns on most, but not all, compiler warnings
