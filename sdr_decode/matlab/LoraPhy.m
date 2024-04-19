@@ -24,7 +24,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
         ft_det_bins;   % num fft detect bins
     end
 
-    properties  (Access = private)
+    properties (Access = private)
         sig;           % lora signal
         sps;           % samples per symbol
         ft_bins;       % number of fft bins
@@ -63,7 +63,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             % x^8+x^6+x^5+x^4+1
             % reg = 0xff;
             % for ii = 1:255
-            %     fprintf("0x%02x, ", reg);
+            %     fprintf('0x%02x, ', reg);
             %     if(~mod(ii, 16))
             %         fprintf('\n');
             %     end
@@ -227,10 +227,10 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             symbols_g = this.gray_decode(symbols, true);
 
             % deinterleave
-            codewords = this.diag_deinterleave(symbols_g, this.sf-2);
+            codewords = this.diag_deinterleave(symbols_g, 4, this.sf-2);
 
             % hamming decode
-            header = this.hamming_decode(codewords, 8);
+            header = this.hamming_decode(codewords, 4);
 
             % parse header
             payload_len = bitor(bitshift(header(1), 4), header(2));
@@ -251,10 +251,10 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             symcnt = this.calc_payload_symbol_count(payload_len);
 
             pos = pos_hdr + 8*this.sps;
-            symbols = zeros(symcnt, 1);
+            symbols = zeros(symcnt,1,'uint16');
             for ii = 1:symcnt
                 if(pos > (length(this.sig) - this.sps))
-                    fprintf("error: unexpected end of data reached - pos:%d  sym_num:%d\n", pos, ii);
+                    fprintf('error: unexpected end of data reached - pos:%d  sym_num:%d\n', pos, ii);
                     return;
                 end
 
@@ -290,11 +290,11 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             hdata = int2bit(header(1:3)', 4, false)';
 
             hcsum = zeros(5,1,'uint8');
-            hcsum(5) = this.freduce(@xor, [hdata(1,4), hdata(1,3), hdata(1,2), hdata(1,1)]);
-            hcsum(4) = this.freduce(@xor, [hdata(1,4), hdata(2,4), hdata(2,3), hdata(2,2), hdata(3,1)]);
+            hcsum(1) = this.freduce(@xor, [hdata(1,4), hdata(1,3), hdata(1,2), hdata(1,1)]);
+            hcsum(2) = this.freduce(@xor, [hdata(1,4), hdata(2,4), hdata(2,3), hdata(2,2), hdata(3,1)]);
             hcsum(3) = this.freduce(@xor, [hdata(1,3), hdata(2,4), hdata(2,1), hdata(3,4), hdata(3,2)]);
-            hcsum(2) = this.freduce(@xor, [hdata(1,2), hdata(2,3), hdata(2,1), hdata(3,3), hdata(3,2), hdata(3,1)]);
-            hcsum(1) = this.freduce(@xor, [hdata(1,1), hdata(2,2), hdata(3,4), hdata(3,3), hdata(3,2), hdata(3,1)]);
+            hcsum(4) = this.freduce(@xor, [hdata(1,2), hdata(2,3), hdata(2,1), hdata(3,3), hdata(3,2), hdata(3,1)]);
+            hcsum(5) = this.freduce(@xor, [hdata(1,1), hdata(2,2), hdata(3,4), hdata(3,3), hdata(3,2), hdata(3,1)]);
         end
 
         function symbols_g = gray_decode(this, symbols, use_ldro)
@@ -307,39 +307,42 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             symbols_g = bitxor(sym_b2, sym_b3);
         end
 
-        % function codewords = diag_deinterleave(this, symbols_g, bits)
-        %     % DIAG_DEINTERLEAVE(symbols_g, bits)
-        %     %   perform circular left shift by n bits
-        %     %                                           154 0 163 92 0
-        %     %   |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
-        %     %    0 |1  0  1  0 : 0| 1  0  1  0  <<1  ->  1  0  1  0  0
-        %     %    1  0 |0  0  0 : 1  0| 0  0  0  <<2  ->  0  0  0  1  0
-        %     %    0  1  0 |1  0 : 0  1  0| 1  0  <<3  ->  1  0  0  1  0
-        %     %    0  0  1  0 |1 : 0  0  1  0| 1  <<4  ->  1  0  0  1  0
-        %     %   |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
-        %     %    0 |0  0  0  1 : 0| 0  0  0  1  <<1  ->  0  0  0  1  0
-        %     %    0  0 |1  0  1 ; 0  0| 1  0  1  <<2  ->  1  0  1  0  0
-        %     codewords = bit2int([
-        %         circshift(int2bit(symbols_g(8), bits, false)', 7);
-        %         circshift(int2bit(symbols_g(7), bits, false)', 6);
-        %         circshift(int2bit(symbols_g(6), bits, false)', 5);
-        %         circshift(int2bit(symbols_g(5), bits, false)', 4);
-        %         circshift(int2bit(symbols_g(4), bits, false)', 3);
-        %         circshift(int2bit(symbols_g(3), bits, false)', 2);
-        %         circshift(int2bit(symbols_g(2), bits, false)', 1);
-        %         circshift(int2bit(symbols_g(1), bits, false)', 0);
-        %     ], 8)';
-        % end
-        function codewords = diag_deinterleave(this, symbols_g, bits)
-            len = length(symbols_g);
-            temp = uint8(zeros(len, bits));
-            for ii = (1:len)
-                temp(ii,:) = circshift(int2bit(symbols_g(len-ii+1), bits, false)', len-ii);
+        function codewords = diag_deinterleave(this, symbols_g, cr, sf)
+            % DIAG_DEINTERLEAVE(symbols_g, bits)
+            %   perform circular left shift by n bits
+            %                                           154 0 163 92 0
+            %   |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
+            %    0 |1  0  1  0 : 0| 1  0  1  0  <<1  ->  1  0  1  0  0
+            %    1  0 |0  0  0 : 1  0| 0  0  0  <<2  ->  0  0  0  1  0
+            %    0  1  0 |1  0 : 0  1  0| 1  0  <<3  ->  1  0  0  1  0
+            %    0  0  1  0 |1 : 0  0  1  0| 1  <<4  ->  1  0  0  1  0
+            %   |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
+            %    0 |0  0  0  1 : 0| 0  0  0  1  <<1  ->  0  0  0  1  0
+            %    0  0 |1  0  1 ; 0  0| 1  0  1  <<2  ->  1  0  1  0  0
+            if(nargin < 3)
+                cr = this.cr;
             end
-            codewords = bit2int(temp, len)';
+            if(nargin < 4)
+                sf = this.sf;
+            end
+
+            cr_bits = cr + 4;
+            cw_len = (length(symbols_g) / cr_bits) * sf;
+            codewords = zeros(cw_len,1,'uint8');
+
+            cwi = 1;
+            for offs = 1:cr_bits:length(symbols_g)
+                temp = zeros(cr_bits,sf,'uint8');
+                for ii = (1:cr_bits)
+                    temp(ii,:) = circshift(int2bit(symbols_g(offs+cr_bits-ii), sf, false)', cr_bits-ii);
+                end
+                A = bit2int(temp, cr_bits)';
+                codewords(cwi:cwi+sf-1,1) = bit2int(temp, cr_bits)';
+                cwi = cwi + sf;
+            end
         end
 
-        function data = hamming_decode(this, codewords, cr_bits)
+        function data = hamming_decode(this, codewords, cr)
             % HAMMING_DECODE(codewords, cr)
             %
             %           parity    data
@@ -353,7 +356,12 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             %    p2 = d0 ^ d1 ^ d3
             %    p3 = d0 ^ d2 ^ d3
             %    p4 = d0 ^ d1 ^ d2 ^ d3
-            data = bitand(codewords, 0x0f);
+            if(nargin < 3)
+                cr = this.cr;
+            end
+            cr_bits = cr + 4;
+
+            data = uint8(bitand(uint8(codewords), 0x0f));
             if(~this.use_hamming)
                 return;
             end
@@ -392,16 +400,16 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                         bitor(bitshift(bitand(perr,0x08), -2), bitshift(bitand(perr,0x02), -1)) );
                     if(ismember(be, [1, 2, 4, 8]))
                         data(ii) = bitxor(data(ii), be);
-                        fprintf("parity data correction - data elem:%d  bit:%d  repaired data:%d\n", ii, be, data(ii));
+                        fprintf('parity data correction - data elem:%d  bit:%d  repaired data:%d\n', ii, be, data(ii));
                     else
-                        fprintf(" !!!! unrecoverable parity error !!!! - data elem:%d  bit:%d\n", ii, be);
+                        fprintf(' !!!! unrecoverable parity error !!!! - data elem:%d  bit:%d\n', ii, be);
                     end
                 end
             end
         end
 
         function bytes_w = dewhiten(self, bytes)
-            % dewhiten  Data Dewhitening
+            % DEWHITEN(bytes)  Data Dewhitening
             %
             % input:
             %     bytes: Bytes after deinterleaving
@@ -458,7 +466,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             f.Position = [20,400,scn(1,3)-120,680];
             tiledlayout(2, sym_count, 'TileSpacing', 'compact', 'Padding', 'compact');
 
-            axes = zeros(2 * sym_count, 1);
+            axes = zeros(2*sym_count,1);
             type = ["up-chirped ", "down-chirped "];
             for cdir = 1:2
                 tpos = pos;
