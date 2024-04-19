@@ -290,7 +290,7 @@ u16varray_t LoraPhy::diag_deinterleave(const u16varray_t& symbols_g, const int c
             // |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
             //  0 |0  0  0  1 : 0| 0  0  0  1  <<1  ->  0  0  0  1  0
             //  0  0 |1  0  1 ; 0  0| 1  0  1  <<2  ->  1  0  1  0  0
-            const uint8_t sym = ((symbols_g[ii+offs] << sf | symbols_g[ii+offs]) << (ii % cr_bits)) >> sf;
+            const uint8_t sym = ((symbols_g[ii+offs] << sf | symbols_g[ii+offs]) << (ii % sf)) >> sf;
             for(int jj=0; jj<sf; jj++) {
                 codewords[jj+cwi] |= (((sym >> jj) & 1) << ii);
             }
