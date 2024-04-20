@@ -1,4 +1,6 @@
 
+// Copyright (C) 2024, John Clark <inindev@gmail.com>
+
 
 class DeviceEntry {
 private:

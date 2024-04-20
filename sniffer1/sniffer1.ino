@@ -1,20 +1,20 @@
 
+// Copyright (C) 2024, John Clark <inindev@gmail.com>
+
 #include "Arduino.h"
 #include "Wire.h"
 #include "LoRaWan_APP.h"
 #include "payload_parse.h"
 
 
-// rgb red:   tx active
-// rgb green: rx complete
-#ifndef LoraWan_RGB
-#define LoraWan_RGB 0
-#endif
-
 #define RF_FREQUENCY                                910300000 // Hz
+#define LORA_IQ_INVERSION_ON                        false
+//#define RF_FREQUENCY                                923300000 // Hz
+//#define LORA_IQ_INVERSION_ON                        true
+
+#define USE_COLOR_LOGGING                           true
 
 #define TX_OUTPUT_POWER                             14        // dBm
-
 #define LORA_BANDWIDTH                              0         // [0: 125 kHz,
                                                               //  1: 250 kHz,
                                                               //  2: 500 kHz,
@@ -28,9 +28,12 @@
 #define LORA_SYMBOL_TIMEOUT                         0         // symbols
 #define LORA_PUBLIC_NETWORK_ON                      true
 #define LORA_FIX_LENGTH_PAYLOAD_ON                  false
-#define LORA_IQ_INVERSION_ON                        false
 
-#define USE_COLOR_LOGGING                           true
+// rgb red:   tx active
+// rgb green: rx complete
+#ifndef LoraWan_RGB
+#define LoraWan_RGB 0
+#endif
 
 
 void on_tx_done(void);
@@ -75,6 +78,8 @@ void setup() {
     radio_events.TxDone = on_tx_done;
     radio_events.TxTimeout = on_tx_timeout;
     radio_events.RxDone = on_rx_done;
+    radio_events.RxTimeout = on_rx_timeout;
+    radio_events.RxError = on_rx_error;
 
     Radio.Init(&radio_events);
     Radio.SetPublicNetwork(LORA_PUBLIC_NETWORK_ON);
@@ -122,12 +127,12 @@ void loop() {
         break;
 
     case RX:
-        Serial.println("\r\nRX waiting for packet...");
+        Serial.printf("\r\nRX waiting for packet (%.1f MHz)...\n", (RF_FREQUENCY / 1000000.0));
         Radio.Rx(0);
         state = LOWPOWER;
         break;
 
-    case LOWPOWER:
+/*    case LOWPOWER:
         if(sleep_active) {
             Radio.Sleep();
             Wire.end();
@@ -145,7 +150,7 @@ void loop() {
 
         lowPowerHandler();
         break;
-
+*/
     default:
         break;
     }
@@ -181,9 +186,18 @@ void on_rx_done(uint8_t* payload, uint16_t payload_len, int16_t rssi, int8_t snr
     state = RX;
 }
 
+void on_rx_timeout(void) {
+    Serial.println("** on_rx_timeout **");
+}
+
+void on_rx_error(void) {
+    Serial.println("!! on_rx_error !!");
+}
+
 void sleep(void) {
     delay(10);
     if(digitalRead(P3_3) == 0) {
+        Serial.println("click");
         sleep_active = true;
     }
 }

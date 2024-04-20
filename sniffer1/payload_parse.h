@@ -1,4 +1,6 @@
 
+// Copyright (C) 2024, John Clark <inindev@gmail.com>
+
 #include <stdio.h>
 #include <stdint.h>
 #include "device_entry.h"

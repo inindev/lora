@@ -1,4 +1,6 @@
 
+// Copyright (C) 2024, John Clark <inindev@gmail.com>
+
 const char* rst = "\033[m";
 const char* bld = "\033[1m";
 const char* red = "\033[31m";
