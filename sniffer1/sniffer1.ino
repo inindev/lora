@@ -181,7 +181,7 @@ void on_rx_done(uint8_t* payload, uint16_t payload_len, int16_t rssi, int8_t snr
 
     Serial.printf("------------------------\r\n");
     Serial.printf("[RX packet %d] rssi: %d, snr: %d, size: %d\r\n", ++rx_count, rssi, snr, payload_len);
-    print_mini_report(payload, (uint8_t)payload_len, USE_COLOR_LOGGING);
+    print_mini_report(payload, payload_len, USE_COLOR_LOGGING);
 
     state = RX;
 }

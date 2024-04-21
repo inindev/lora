@@ -71,18 +71,18 @@ const char* get_msg_ver_str(const msg_ver_t msg_ver) {
 }
 
 // last 4 bytes of payload
-const uint8_t* get_mic(const uint8_t* payload, const uint8_t payload_len) {
+const uint8_t* get_mic(const uint8_t* payload, const int payload_len) {
     return (&payload[payload_len - 4]);
 }
 
-void print_hex(const uint8_t* buf, const uint8_t len) {
-    for(uint8_t i=0; i<len; i++) {
+void print_hex(const uint8_t* buf, const int len) {
+    for(int i=0, imax=max(len, 0); i<imax; i++) {
         printf("%02hhx", buf[i]);
     }
     printf("\r\n");
 }
 
-void print_mac_payload(const uint8_t* payload, const uint8_t payload_len) {
+void print_mac_payload(const uint8_t* payload, const int payload_len) {
     print_hex(&payload[1], payload_len - 5);
 }
 
@@ -95,8 +95,8 @@ const uint8_t get_fport(const uint8_t* payload) {
     return (payload[8]);
 }
 
-void print_frm_payload(const uint8_t* payload, const uint8_t payload_len) {
-    print_hex(&payload[9], payload_len - 13);
+void print_frm_payload(const uint8_t* payload, const int payload_len) {
+    print_hex(&payload[9], max(payload_len - 9, 0));
 }
 
 uint32_t get_dev_addr(const uint8_t* payload) {
@@ -114,7 +114,7 @@ uint16_t get_fcnt(const uint8_t* payload) {
 // fopts[0..15] ??
 
 /////////////////////////////////
-void print_mini_report(const uint8_t* payload, const uint8_t payload_len, const bool colorize=false) {
+void print_mini_report(const uint8_t* payload, const int payload_len, const bool colorize=false) {
     const uint32_t dev_addr = get_dev_addr(payload);
     const DeviceEntry* device_entry = get_device_entry(dev_addr);
 
@@ -134,7 +134,7 @@ void print_mini_report(const uint8_t* payload, const uint8_t payload_len, const 
     if(colorize) printf(rst);
 }
 
-void print_report(const uint8_t* payload, const uint8_t payload_len) {
+void print_report(const uint8_t* payload, const int payload_len) {
     printf("---------\r\n");
     printf("phy payload: ");
     print_hex(payload, payload_len);
