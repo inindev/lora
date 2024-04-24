@@ -7,10 +7,8 @@
 #include "payload_parse.h"
 
 
-#define RF_FREQUENCY                                910300000 // Hz
-#define LORA_IQ_INVERSION_ON                        false
-//#define RF_FREQUENCY                                923300000 // Hz
-//#define LORA_IQ_INVERSION_ON                        true
+#define RF_FREQUENCY1                               910300000 // Hz
+#define RF_FREQUENCY2                               923300000 // Hz
 
 #define USE_COLOR_LOGGING                           true
 
@@ -35,7 +33,6 @@
 #define LoraWan_RGB 0
 #endif
 
-
 void on_tx_done(void);
 void on_tx_timeout(void);
 void on_rx_done(uint8_t* payload, uint16_t payload_len, int16_t rssi, int8_t snr);
@@ -51,6 +48,7 @@ typedef enum {
 
 static RadioEvents_t radio_events;
 
+uint32_t current_freq;
 int16_t tx_count;
 int16_t rx_count;
 int16_t last_rssi;
@@ -65,6 +63,9 @@ void setup() {
     sleep_active = false;
 
     Serial.begin(115200);
+    while (!Serial) delay(1);
+    delay(100);
+    Serial.println("CubeCell ASR6502 / SX1262");
 
     pinMode(Vext, OUTPUT);
     digitalWrite(Vext, LOW);
@@ -83,7 +84,7 @@ void setup() {
 
     Radio.Init(&radio_events);
     Radio.SetPublicNetwork(LORA_PUBLIC_NETWORK_ON);
-    Radio.SetChannel(RF_FREQUENCY);
+    Radio.SetChannel(RF_FREQUENCY1); current_freq = RF_FREQUENCY1;
 
     Radio.SetTxConfig(MODEM_LORA,   // RadioModems_t modem
         TX_OUTPUT_POWER,            // int8_t power
@@ -95,7 +96,7 @@ void setup() {
         LORA_FIX_LENGTH_PAYLOAD_ON, // bool fixLen
         true,                       // bool crcOn
         0, 0,                       // bool freqHopOn, uint8_t hopPeriod
-        LORA_IQ_INVERSION_ON,       // bool iqInverted
+        false,                      // bool iqInverted
         3000);                      // uint32_t timeout
 
     Radio.SetRxConfig(MODEM_LORA,   // RadioModems_t modem
@@ -109,10 +110,37 @@ void setup() {
         0,                          // uint8_t payloadLen
         true,                       // bool crcOn
         0, 0,                       // bool freqHopOn, uint8_t hopPeriod
-        LORA_IQ_INVERSION_ON,       // bool iqInverted
+        false,                      // bool iqInverted
         true);                      // bool rxContinuous
 
     state = RX;
+}
+
+void flip_radio() {
+    bool invertIq = false;
+    if(current_freq != RF_FREQUENCY1) {
+        current_freq = RF_FREQUENCY1;
+        invertIq = false;
+        Serial.printf("============================================================\n");
+    } else {
+        current_freq = RF_FREQUENCY2;
+        invertIq = true;
+    }
+
+    Radio.SetChannel(current_freq);
+    Radio.SetRxConfig(MODEM_LORA,   // RadioModems_t modem
+        LORA_BANDWIDTH,             // uint32_t bandwidth
+        LORA_SPREADING_FACTOR,      // uint32_t datarate
+        LORA_CODINGRATE,            // uint8_t coderate
+        0,                          // uint32_t bandwidthAfc
+        LORA_PREAMBLE_LENGTH,       // uint16_t preambleLen
+        LORA_SYMBOL_TIMEOUT,        // uint16_t symbTimeout
+        LORA_FIX_LENGTH_PAYLOAD_ON, // bool fixLen
+        0,                          // uint8_t payloadLen
+        true,                       // bool crcOn
+        0, 0,                       // bool freqHopOn, uint8_t hopPeriod
+        invertIq,                   // bool iqInverted
+        true);                      // bool rxContinuous
 }
 
 void loop() {
@@ -127,7 +155,7 @@ void loop() {
         break;
 
     case RX:
-        Serial.printf("\r\nRX waiting for packet (%.1f MHz)...\n", (RF_FREQUENCY / 1000000.0));
+        Serial.printf("\r\nRX waiting for packet (%.1f MHz)...\n", (current_freq / 1000000.0));
         Radio.Rx(0);
         state = LOWPOWER;
         break;
@@ -183,6 +211,7 @@ void on_rx_done(uint8_t* payload, uint16_t payload_len, int16_t rssi, int8_t snr
     Serial.printf("[RX packet %d] rssi: %d, snr: %d, size: %d\r\n", ++rx_count, rssi, snr, payload_len);
     print_mini_report(payload, payload_len, USE_COLOR_LOGGING);
 
+    flip_radio();
     state = RX;
 }
 
@@ -229,3 +258,4 @@ void gpio_on(void) {
     digitalWrite(GPIO4, HIGH);
     digitalWrite(GPIO5, HIGH);
 }
+

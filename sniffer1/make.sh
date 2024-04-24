@@ -15,7 +15,7 @@ echo "building $PROJ"
 $HOME/bin/arduino-cli compile -b CubeCell:CubeCell:CubeCell-Board-V2 "$PROJ"
 
 echo
-PORT="$(ls /dev/cu.usbserial* 2>/dev/null || ls /dev/ttyUSB* 2>/dev/null)"
+PORT="$(ls /dev/cu.usbserial* 2>/dev/null || ls /dev/cu.usbmodem* 2>/dev/null || ls /dev/ttyUSB* 2>/dev/null)"
 if lsof -t -S 2 -O "$PORT" >/dev/null; then
     echo "\033[31merror: cannot program, serial port $PORT is in use\033[m\n"
     exit 1
