@@ -11,7 +11,8 @@ else
     invert = false;
 end
 
-phy = LoraPhy(7, 125e3, './lora.raw', 1024e3, swap_iq);
+% rx_sdr -g12 -f 910300000 -s 250000 -F CF32 /tmp/lora.raw
+phy = LoraPhy(7, 125e3, '/tmp/lora.raw', 250e3, swap_iq);
 
 [x, netid1, netid2] = phy.detect_preamble(1, 8, invert);
 if(x < 1)

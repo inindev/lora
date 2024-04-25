@@ -4,7 +4,8 @@
 % https://github.com/jkadbear/LoRaPHY/blob/master/LoRaPHY.m
 % https://github.com/tapparelj/gr-lora_sdr/blob/master/lib
 
-% phy = LoraPhy(7, 125e3, 'lora_923.3_sample/lora.raw', 1024e3)
+% rx_sdr -g12 -f 910300000 -s 250000 -F CF32 /tmp/lora.raw
+% phy = LoraPhy(7, 125e3, '/tmp/lora.raw', 1024e3)
 % [x, netid1, netid2] = phy.detect_preamble();
 % [sfd, hdr] = phy.detect_sfd(x);
 % [payload_len, cr, crc, is_valid] = phy.decode_header(hdr);
@@ -88,8 +89,10 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 0xe5, 0xca, 0x94, 0x28, 0x50, 0xa1, 0x42, 0x84, 0x09, 0x13, 0x27, 0x4f, 0x9f, 0x3f, 0x7f, ]');
 
             this.sig = LoraPhy.read(filename);
-            this.sig = lowpass(this.sig, bw/2, file_fs);
-            this.sig = resample(this.sig, this.fs, file_fs);  % resample signal @ 2x bandwidth
+            this.sig = lowpass(this.sig, this.bw/2, file_fs);
+            if(this.fs ~= file_fs)
+                this.sig = resample(this.sig, this.fs, file_fs);  % resample signal @ 2x bandwidth
+            end
             if(swap_iq)
                 % swap I and Q channels
                 this.sig = imag(this.sig) + 1i * real(this.sig);
@@ -283,7 +286,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             %     length
 
             % see SX1276_Datasheet.pdf p.31
-            symcnt = max(ceil((2*double(payload_len)-this.sf +7+ 4*this.use_crc-5*this.has_header) / (this.sf-2*this.use_ldro)) * (this.cr+4), 0);
+            symcnt = max(ceil((2*double(payload_len)-this.sf +7+ 4*this.use_crc-5*(1-this.has_header)) / (this.sf-2*this.use_ldro)) * (this.cr+4), 0);
         end
 
         function hcsum = calc_header_csum(this, header)

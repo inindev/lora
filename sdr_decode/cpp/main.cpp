@@ -2,9 +2,10 @@
 #include "LoraPhy.h"
 
 
+// rx_sdr -g12 -f 910300000 -s 250000 -F CF32 /tmp/lora.raw
 int main(void) {
     // test iq / chirp inversion
-    const bool test_inv = true;
+    const bool test_inv = false;
     const bool swap_iq = !test_inv ? false: true;
     const bool invert  = !test_inv ? false: !swap_iq;
 
@@ -12,7 +13,7 @@ int main(void) {
     phy.init(7, 125e3, 8);
 
     cpvarray_t sig;
-    int rc = LoraPhy::load("./lora.raw", sig, swap_iq);
+    int rc = LoraPhy::load("/tmp/lora.raw", sig, swap_iq);
     if(rc != 0)
     {
         return rc;
@@ -71,6 +72,7 @@ int main(void) {
 
     const u8varray_t& payload = phy.dewhiten(bytes, payload_len);
 
+    printf("payload_len: %zu\n", payload.size());
     printf("payload: ");
     for(int i=0; i<payload.size(); i++) {
         printf("%02x ", payload[i]);

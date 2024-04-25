@@ -174,7 +174,7 @@ u16varray_t LoraPhy::decode_payload(const cpvarray_t& sig, const long pos_hdr, c
 
 uint8_t LoraPhy::calc_payload_symbol_count(const uint8_t payload_len) {
     // see SX1276_Datasheet.pdf p.31
-    const int symcnt = std::ceil((2*double(payload_len)-this->sf +7+ 4*this->use_crc-5*this->has_header) / (this->sf-2*this->use_ldro)) * (this->cr+4);
+    const int symcnt = std::ceil((2*double(payload_len)-this->sf +7+ 4*this->use_crc-5*(1-this->has_header)) / (this->sf-2*this->use_ldro)) * (this->cr+4);
     if(symcnt < 0) {
         return 0;
     }
