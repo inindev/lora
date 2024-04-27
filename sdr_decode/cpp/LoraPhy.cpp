@@ -27,35 +27,43 @@ void LoraPhy::init(const int sf, const int bw, const int plen) {
 
     LoraPhy::chirp(this->sps, this->fs, this->bw, false, this->upchirp);
     LoraPhy::chirp(this->sps, this->fs, this->bw, true, this->downchirp);
-    //LoraPhy::print_array(this->downchirp, 16);
 }
 
-std::tuple<long, int, int> LoraPhy::detect_preamble(const cpvarray_t& sig, const long pos, const bool invert) {
-    if(pos < 0) {
-        printf("LoraPhy::detect_preamble - invalid offset (pos = %ld)\n", pos);
+std::tuple<int, int, int> LoraPhy::detect_preamble(std::ifstream& ifs, const bool invert) {
+    if(!ifs) {
+        fprintf(stderr, "error: detect_preamble - invalid data stream\n");
         return {-1, -1, -1};
     }
 
     int det_count = 1;  // current sample == 1
     int fbin_last = 0;
-    long pos_offs = 0;
-    for(long ii=pos; ii < sig.size()-this->sps; ii += this->sps) {
-        const int fbin = this->dechirp(sig, ii, invert).first;
-        //printf("%4ld) detect_preamble - fbin: %d\n", ii, fbin);
+    int ctr = 0;
+    cpvarray_t sig(this->sps);
+    while(ifs.good()) {
+        if(ctr++ % 1000 == 0) printf("kloop# %d\n", ctr/1000);
 
+        if(get_sample(ifs, sig)) return {-1, -1, -1};
+        const int fbin = this->dechirp(sig, 0, invert).first;
+        // printf("detect_preamble(%d) - fbin: %d\n", det_count, fbin);
+
+        // todo: allow extra preamble chirps
         if(abs(fbin - fbin_last) <= this->ft_det_bins) {
             det_count++;
             if(det_count >= this->plen) {
                 // preamble detected, adjust fft bin to zero
+                int pos_offs = 0;
                 if(invert) {
-                    pos_offs = ii + fbin;              // inverted chirp, non-inverted IQ
+                    pos_offs = fbin;              // inverted chirp, non-inverted IQ
                 } else {
-                    pos_offs = ii + this->sps - fbin;  // non-inverted chirp, inverted IQ
+                    pos_offs = this->sps - fbin;  // non-inverted chirp, inverted IQ
                 }
 
                 // read network id
-                int fbin1 = this->dechirp(sig, pos_offs+this->sps, invert).first;
-                int fbin2 = this->dechirp(sig, pos_offs+2*this->sps, invert).first;
+                if(get_sample(ifs, sig, pos_offs)) return {-1, -1, -1};
+                int fbin1 = this->dechirp(sig, 0, invert).first;
+
+                if(get_sample(ifs, sig)) return {-1, -1, -1};
+                int fbin2 = this->dechirp(sig, 0, invert).first;
                 if(invert) {
                     fbin1 = this->sps - fbin1;  // inverted chirp, non-inverted IQ
                     fbin2 = this->sps - fbin2;
@@ -65,7 +73,7 @@ std::tuple<long, int, int> LoraPhy::detect_preamble(const cpvarray_t& sig, const
                 const int netid1 = fbin1 / 2;
                 const int netid2 = fbin2 / 2;
 
-                //printf("  *** preamble detected ***  fbin:%4d  pos_offs:%ld  netid1:%d  netid2:%d\n", fbin, pos_offs, netid1, netid2);
+                // printf("\n  *** preamble detected ***  fbin:%4d  pos_offs:%d  netid1:%d  netid2:%d\n", fbin, pos_offs, netid1, netid2);
                 return {pos_offs, netid1, netid2};
             }
         } else {
@@ -79,24 +87,28 @@ std::tuple<long, int, int> LoraPhy::detect_preamble(const cpvarray_t& sig, const
 }
 
 // look for the start of frame delimiter
-sfdinfo_t LoraPhy::detect_sfd(const cpvarray_t& sig, const long pos, const bool invert) {
-    if(pos < 0) {
-        printf("LoraPhy::detect_sfd - invalid offset (pos = %ld)\n", pos);
+sfdinfo_t LoraPhy::detect_sfd(std::ifstream& ifs, const bool invert) {
+    if(!ifs) {
+        fprintf(stderr, "error: detect_sfd - invalid data stream\n");
         return sfdinfo_t(-1, -1);
     }
 
-    for(long ii=pos; ii < sig.size()-this->sps; ii += this->sps) {
-        int mval_up = dechirp(sig, ii, invert).second;
-        int mval_dn = dechirp(sig, ii, !invert).second;
+    // scan up to five samples looking for the sfd
+    cpvarray_t sig(this->sps);
+    for(int i=0; i<5; i++) {
+        if(get_sample(ifs, sig)) return sfdinfo_t(-1, -1);
+        int mval_up = dechirp(sig, 0, invert).second;
+        int mval_dn = dechirp(sig, 0, !invert).second;
         if(mval_dn > mval_up) {
             // downchirp detected
             // look for second downchirp at 1.25 sps
-            mval_up = dechirp(sig, ii + 1.25 * this->sps, invert).second;
-            mval_dn = dechirp(sig, ii + 1.25 * this->sps, !invert).second;
+            if(get_sample(ifs, sig, 0.25 * this->sps)) return sfdinfo_t(-1, -1);
+            mval_up = dechirp(sig, 0, invert).second;
+            mval_dn = dechirp(sig, 0, !invert).second;
             if(mval_dn > mval_up) {
                 // second downchirp detected
-                const long sfd = ii;
-                const long hdr = sfd + 2.25 * this->sps;  // the sfd is 2.25 symbols long
+                const int sfd = 0;
+                const int hdr = 2.25 * this->sps;  // the sfd is 2.25 symbols long
                 return sfdinfo_t(sfd, hdr);
             }
         }
@@ -105,20 +117,29 @@ sfdinfo_t LoraPhy::detect_sfd(const cpvarray_t& sig, const long pos, const bool 
     return sfdinfo_t(-1, -1);  // sfd not detected
 }
 
+
 // <payload_len, cr, crc, is_valid>
-std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const cpvarray_t& sig, const long pos, const bool invert) {
+std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(std::ifstream& ifs, const bool invert) {
+    if(!ifs) {
+        fprintf(stderr, "error: decode_header - invalid data stream\n");
+        return {0, 0, 0, false};
+    }
+
+    cpvarray_t sig(8 * this->sps);
+    if(get_sample(ifs, sig)) return {0, 0, 0, false};
+
     u16varray_t symbols(8);
-    for(int ii=0; ii<8; ii++) {
-        int fbin = this->dechirp(sig, pos+ii*this->sps, invert).first;
-        //printf("%4d) decode_header - fbin: %d\n", ii, fbin);
+    for(int i=0; i<8; i++) {
+        int fbin = this->dechirp(sig, i*this->sps, invert).first;
+        // printf("%4d) decode_header - fbin: %d\n", i, fbin);
 
         if(invert) {
             fbin = this->sps - fbin;  // inverted chirp, non-inverted IQ
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[ii] = fbin / 2;
-        //printf("symbols[%d]: %d\n", ii, symbols[ii]);
+        symbols[i] = fbin / 2;
+        // printf("symbols[%d]: %d\n", i, symbols[i]);
     }
 
     // gray decoding
@@ -126,8 +147,8 @@ std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const cpvarra
 
     // deinterleave
     const u16varray_t& codewords = diag_deinterleave(symbols_g, 4, this->sf-2); // cr, sf
-    // for(int ii=0; ii<this->sf-2; ii++) {
-    //    printf("%4d) cw: %d\n", ii, codewords[ii]);
+    // for(int i=0; i<this->sf-2; i++) {
+    //    printf("%4d) cw: %d\n", i, codewords[i]);
     // }
 
     // hamming decode
@@ -146,27 +167,25 @@ std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const cpvarra
     return {payload_len, cr, crc, is_valid};
 }
 
-u16varray_t LoraPhy::decode_payload(const cpvarray_t& sig, const long pos_hdr, const uint8_t payload_len, const bool invert) {
+u16varray_t LoraPhy::decode_payload(std::ifstream& ifs, const uint8_t payload_len, const bool invert) {
     const uint8_t symcnt = calc_payload_symbol_count(payload_len);
 
+    cpvarray_t sig(this->sps);
     u16varray_t symbols(symcnt);
-    long pos = pos_hdr + 8*this->sps;
-    for(uint8_t ii=0; ii<symcnt; ii++) {
-        if(pos > (sig.size() - this->sps)) {
-            printf("error: unexpected end of data reached - pos:%ld  sym_num:%d\n", pos, ii);
+    for(uint8_t i=0; i<symcnt; i++) {
+        if(get_sample(ifs, sig)) {
+            fprintf(stderr, "error: decode_payload - unexpected end of data reached - sym_num:%d\n", i);
             return u16varray_t();
         }
 
-        int fbin = this->dechirp(sig, pos, invert).first;
+        int fbin = this->dechirp(sig, 0, invert).first;
         if(invert) {
             fbin = this->sps - fbin + 1;  // inverted chirp, non-inverted IQ
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[ii] = fbin / 2;
-        //printf("%d) pos:%4ld  fbin:%3d  -->  sym:%3d\n", ii, pos, fbin, symbols[ii]);
-
-        pos = pos + this->sps;
+        symbols[i] = fbin / 2;
+        //printf("%d) pos:%4ld  fbin:%3d  -->  sym:%3d\n", i, pos, fbin, symbols[i]);
     }
 
     return symbols;
@@ -262,9 +281,9 @@ u8varray_t LoraPhy::hamming_decode(const u16varray_t& codewords, const int cr) {
             const uint8_t be = ((perr & 0x01) << 3) | (perr & 0x04) | ((perr & 0x08) >> 2) | ((perr & 0x02) >> 1);
             if((be==1) || (be==2) || (be==4) | (be==8)) {
                 result[i] = data ^ be;
-                printf("parity data correction - data elem:%d  bit: %d  repaired data: %d\n", i, be, result[i]);
+                fprintf(stderr, "warn: parity data correction - data elem:%d  bit: %d  repaired data: %d\n", i, be, result[i]);
             } else {
-                printf(" !!!! unrecoverable parity error !!!! - data elem:%d  bit: %d\n", i, be);
+                fprintf(stderr, "error: !!!! unrecoverable parity error !!!! - data elem:%d  bit: %d\n", i, be);
             }
         } else {
             result[i] = data;
@@ -281,7 +300,7 @@ u16varray_t LoraPhy::diag_deinterleave(const u16varray_t& symbols_g, const int c
 
     int cwi = 0;
     for(int offs=0; offs<symbols_g.size(); offs+=cr_bits) {
-        for(int ii=0; ii<cr_bits; ii++) {                 // 154 0 163 92 0
+        for(int i=0; i<cr_bits; i++) {              // 154 0 163 92 0
             // |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
             //  0 |1  0  1  0 : 0| 1  0  1  0  <<1  ->  1  0  1  0  0
             //  1  0 |0  0  0 : 1  0| 0  0  0  <<2  ->  0  0  0  1  0
@@ -290,9 +309,9 @@ u16varray_t LoraPhy::diag_deinterleave(const u16varray_t& symbols_g, const int c
             // |0  0  1  0  0|: 0  0  1  0  0  <<0  ->  0  0  1  0  0
             //  0 |0  0  0  1 : 0| 0  0  0  1  <<1  ->  0  0  0  1  0
             //  0  0 |1  0  1 ; 0  0| 1  0  1  <<2  ->  1  0  1  0  0
-            const uint8_t sym = ((symbols_g[ii+offs] << sf | symbols_g[ii+offs]) << (ii % sf)) >> sf;
-            for(int jj=0; jj<sf; jj++) {
-                codewords[jj+cwi] |= (((sym >> jj) & 1) << ii);
+            const uint8_t sym = ((symbols_g[i+offs] << sf | symbols_g[i+offs]) << (i % sf)) >> sf;
+            for(int j=0; j<sf; j++) {
+                codewords[j+cwi] |= (((sym >> j) & 1) << i);
             }
         }
         cwi += sf;
@@ -313,14 +332,14 @@ u8varray_t LoraPhy::dewhiten(const u8varray_t& bytes, const int len) {
     return bytes_w;
 }
 
-chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const long pos, const bool invert) {
+chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const int pos, const bool invert) {
     const cpvarray_t& chp = invert ? this->upchirp : this->downchirp;
 
     // copy the chirped signal into a 2x buffer for fft proc
     const int fft_len = 2 * this->sps;
     cpvarray_t buf(fft_len);
-    for(int ii=0; ii < this->sps; ii++) {
-        buf[ii] = chp[ii] * sig[pos + ii];
+    for(int i=0; i < this->sps; i++) {
+        buf[i] = chp[i] * sig[pos + i];
     }
 
     fft(buf, fft_len);
@@ -330,10 +349,10 @@ chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const long pos, const bool in
     // find max fft bin
     int mbin = 0;
     complex_t::value_type mabs = 0.0;
-    for(int ii=0; ii < this->sps; ii++) {
-        const complex_t::value_type abs = std::abs(buf[ii]) + std::abs(buf[this->sps + ii]);
+    for(int i=0; i < this->sps; i++) {
+        const complex_t::value_type abs = std::abs(buf[i]) + std::abs(buf[this->sps + i]);
         if(abs > mabs) {
-             mbin = ii;
+             mbin = i;
              mabs = abs;
          }
     }
@@ -351,9 +370,9 @@ void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_dow
     const complex_t::value_type beta = (f1 - f0) / (2.0*t1);
 
     cpvarray_t buf(sps);
-    for(int ii=0; ii<sps; ++ii) {
-        const complex_t::value_type t = ii / static_cast<complex_t::value_type>(fs);
-        buf[ii] = complex_t(
+    for(int i=0; i<sps; ++i) {
+        const complex_t::value_type t = i / static_cast<complex_t::value_type>(fs);
+        buf[i] = complex_t(
              cos( tau * (beta * t*t + f0*t) ),
             -cos( tau * (beta * t*t + f0*t + 90.0/360.0) )
         );
@@ -362,23 +381,51 @@ void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_dow
     outbuf.swap(buf);
 }
 
+int LoraPhy::get_sample(std::ifstream& ifs, cpvarray_t& buf, const int offs, const bool swap_iq) {
+    int rc = ifs.rdstate();
+    if(rc != 0) {
+        fprintf(stderr, "error: get_sample - cannot read from input stream - rc: %d\n", rc);
+        return rc;
+    }
+
+    if(offs > 0) {  // move the stream forward by the specified amount
+        ifs.ignore(offs * sizeof(cpvarray_t::value_type));
+    }
+
+    ifs.read(reinterpret_cast<char*>(&buf[0]), buf.size() * sizeof(cpvarray_t::value_type));
+
+    rc = ifs.rdstate();
+    if(rc != 0) {
+        fprintf(stderr, "error: get_sample - read from input stream failed - rc: %d\n", rc);
+        return rc;
+    }
+
+    if(swap_iq) {  // swap I and Q channels
+        for(int i=0; i<buf.size(); i++) {
+            buf[i] = complex_t(buf[i].imag(), buf[i].real());
+        }
+    }
+
+    return 0; // success
+}
+
 int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swap_iq) {
     FILE* pf = fopen(filename.c_str(), "rb");
     if(pf == NULL) {
-        printf("LoraPhy::load - failed to open binary file for reading\n");
+        fprintf(stderr, "error: load - failed to open binary file for reading\n");
         return -1;
     }
 
     int rc = fseek(pf, 0L, SEEK_END);
     if(rc != 0) {
-        printf("LoraPhy::load - fseek(SEEK_END) failed, rc=%d\n", rc);
+        fprintf(stderr, "error: load - fseek(SEEK_END) failed, rc=%d\n", rc);
         return rc;
     }
     const long filebytes = ftell(pf);
 
     rc = fseek(pf, 0L, SEEK_SET);
     if(rc != 0) {
-        printf("LoraPhy::load - fseek(SEEK_SET) failed, rc=%d\n", rc);
+        fprintf(stderr, "error: load - fseek(SEEK_SET) failed, rc=%d\n", rc);
         return rc;
     }
 
@@ -387,15 +434,15 @@ int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swa
     const size_t ret = fread(&buf[0], sizeof(cpvarray_t::value_type), count, pf);
     fclose(pf);
     if(ret != count) {
-        printf("LoraPhy::load - failed to read binary file (%zu of %ld read)\n", ret, count);
+        fprintf(stderr, "error: load - failed to read binary file (%zu of %ld read)\n", ret, count);
         return -2;
     }
 
     if(swap_iq) {
         // swap I and Q channels
         outbuf.resize(count);
-        for(long ii=0; ii<count; ii++) {
-            outbuf[ii] = complex_t(buf[ii].imag(), buf[ii].real());
+        for(long i=0; i<count; i++) {
+            outbuf[i] = complex_t(buf[i].imag(), buf[i].real());
         }
     } else {
         outbuf.swap(buf);
@@ -407,24 +454,25 @@ int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swa
 int LoraPhy::save(const std::string filename, const cpvarray_t& buf) {
     FILE* pf = fopen(filename.c_str(), "wb");
     if(pf == NULL) {
-        printf("LoraPhy::save - failed to open binary file for writing\n");
+        fprintf(stderr, "error: save - failed to open binary file for writing\n");
         return -1;
     }
 
     const size_t ret = fwrite(&buf[0], sizeof(cpvarray_t::value_type), buf.size(), pf);
     fclose(pf);
     if(ret != buf.size()) {
-        printf("LoraPhy::save - failed to write binary file (%zu of %lu written)\n", ret, buf.size());
+        fprintf(stderr, "error: save - failed to write binary file (%zu of %lu written)\n", ret, buf.size());
         return -1;
     }
 
     return 0;  // success
 }
 
-void LoraPhy::print_array(const cpvarray_t& buf, const long num) {
-    const long count = (num==0 || num>buf.size()) ? buf.size() : num;
-    for(long ii=0; ii < count; ++ii) {
-         printf("  %14.10f %+14.10fi  [%11.8f]\n", buf[ii].real(), buf[ii].imag(), std::abs(buf[ii]));
+void LoraPhy::print_array(const cpvarray_t& buf, const int num) {
+    const int count = (num==0 || num>buf.size()) ? buf.size() : num;
+    for(int i=0; i < count; ++i) {
+         printf("  %14.10f %+14.10fi  [%11.8f]\n", buf[i].real(), buf[i].imag(), std::abs(buf[i]));
     }
     printf("  size: %zu\n", buf.size());
 }
+

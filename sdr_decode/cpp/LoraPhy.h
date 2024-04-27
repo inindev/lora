@@ -3,11 +3,12 @@
 
 #include <string>
 #include <stdint.h>
+#include <fstream>
 
 #include "types.h"
 
 typedef std::pair<int, int> chirpval_t;
-typedef std::pair<long, long> sfdinfo_t;
+typedef std::pair<int, int> sfdinfo_t;
 
 
 #define WHITENING_SEQ (uint8_t[]){ \
@@ -35,10 +36,11 @@ struct LoraPhy
 
     void init(const int sf, const int bw, const int plen);
 
-    std::tuple<long, int, int> detect_preamble(const cpvarray_t& sig, const long pos=0, const bool invert=false);
-    sfdinfo_t detect_sfd(const cpvarray_t& sig, const long pos=0, const bool invert=false);
-    std::tuple<uint8_t, uint8_t, uint8_t, bool> decode_header(const cpvarray_t& sig, const long pos, const bool invert=false);
-    u16varray_t decode_payload(const cpvarray_t& sig, const long pos_hdr, const uint8_t payload_len, const bool invert=false);
+    std::tuple<int, int, int> detect_preamble(std::ifstream& ifs, const bool invert=false);
+    sfdinfo_t detect_sfd(std::ifstream& ifs, const bool invert=false);
+
+    std::tuple<uint8_t, uint8_t, uint8_t, bool> decode_header(std::ifstream& ifs, const bool invert=false);
+    u16varray_t decode_payload(std::ifstream& ifs, const uint8_t payload_len, const bool invert=false);
 
     uint8_t calc_payload_symbol_count(const uint8_t payload_len);
     uint8_t calc_header_csum(const u8varray_t& header);
@@ -48,12 +50,13 @@ struct LoraPhy
     u16varray_t diag_deinterleave(const u16varray_t& symbols_g, const int cr, const int sf);
     u8varray_t dewhiten(const u8varray_t& bytes, const int len=0);
 
-    chirpval_t dechirp(const cpvarray_t& sig, const long pos=0, const bool invert=false);
+    chirpval_t dechirp(const cpvarray_t& sig, const int pos=0, const bool invert=false);
     static void chirp(const int sps, const int fs, const int bw, const bool is_downchirp, cpvarray_t& outbuf);
 
+    static int get_sample(std::ifstream& ifs, cpvarray_t& buf, const int offs=0, const bool swap_iq=false);
     static int load(const std::string filename, cpvarray_t& buf, const bool swap_iq=false);
     static int save(const std::string filename, const cpvarray_t& buf);
-    static void print_array(const cpvarray_t& buf, const long num=0);
+    static void print_array(const cpvarray_t& buf, const int num=0);
 
 
 private:
