@@ -21,4 +21,4 @@ const DeviceEntry my_devices[] = {
     DeviceEntry(0x66666666, "temp sensor freezer",      cya),
 };
 
-const uint32 my_devices_len = (sizeof(my_devices) / sizeof(my_devices[0]));
+const uint32_t my_devices_len = (sizeof(my_devices) / sizeof(my_devices[0]));

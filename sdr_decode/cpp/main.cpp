@@ -1,6 +1,14 @@
 
 #include "LoraPhy.h"
 
+#define max std::max
+uint32_t millis() {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint32_t)now.tv_sec*1000000000LL + now.tv_nsec;
+}
+#include "../../sniffer1/payload_parse.h"
+
 
 int do_work(LoraPhy& phy, std::ifstream& ifs, const bool swap_iq, const bool invert) {
     const auto [ppos, netid1, netid2] = phy.detect_preamble(ifs, invert);
@@ -55,14 +63,15 @@ int do_work(LoraPhy& phy, std::ifstream& ifs, const bool swap_iq, const bool inv
     }
 
     const u8varray_t& payload = phy.dewhiten(bytes, payload_len);
-    printf("payload_len: %zu\n", payload.size());
-    printf("payload: ");
-    for(int i=0; i<payload.size(); i++) {
-        printf("%02x", payload[i]);
-    }
-    printf("\n");
-    printf("csum1: %d\n", bytes[payload_len]);
-    printf("csum2: %d\n", bytes[payload_len+1]);
+    print_mini_report(&payload[0], payload.size(), true);
+    // printf("payload_len: %zu\n", payload.size());
+    // printf("payload: ");
+    // for(int i=0; i<payload.size(); i++) {
+    //     printf("%02x", payload[i]);
+    // }
+    // printf("\n");
+    // printf("csum1: %d\n", bytes[payload_len]);
+    // printf("csum2: %d\n", bytes[payload_len+1]);
 
     return 0;
 }
