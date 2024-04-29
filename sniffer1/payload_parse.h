@@ -123,7 +123,7 @@ void print_mini_report(const uint8_t* payload, const int payload_len, const bool
     const uint32_t el_sec = (NULL == device_entry) ?  0 : device_entry->get_elapsed_sec();
     if(NULL != device_entry) device_entry->set_last_seen();
 
-    if(colorize) printf(dev_color);
+    if(colorize) printf("%s", dev_color);
     printf("    device addr: %s (%08x)\r\n", dev_name, dev_addr);
     printf("   message type: %s (0x%02hhx)\r\n", get_msg_type_str(get_msg_type(payload)), get_msg_type(payload));
     printf("      direction: %s\r\n", get_msg_dir(get_msg_type(payload)));
@@ -131,7 +131,7 @@ void print_mini_report(const uint8_t* payload, const int payload_len, const bool
     printf("    phy payload: "); print_hex(payload, payload_len);
     printf("    frm payload:                   "); print_frm_payload(payload, payload_len);
     if(el_sec > 0) printf("      last seen: %ds ago\r\n", el_sec);
-    if(colorize) printf(rst);
+    if(colorize) printf("%s", rst);
 }
 
 void print_report(const uint8_t* payload, const int payload_len) {
