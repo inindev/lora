@@ -138,7 +138,7 @@ std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(std::ifstream
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[i] = fbin / 2;
+        symbols[i] = (fbin+1) / 2;  // +1 round-up
         // printf("symbols[%d]: %d\n", i, symbols[i]);
     }
 
@@ -184,8 +184,8 @@ u16varray_t LoraPhy::decode_payload(std::ifstream& ifs, const uint8_t payload_le
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[i] = fbin / 2;
-        //printf("%d) pos:%4ld  fbin:%3d  -->  sym:%3d\n", i, pos, fbin, symbols[i]);
+        symbols[i] = (fbin+1) / 2;  // +1 round-up
+        //printf("%d) fbin:%3d  -->  sym:%3d\n", i, fbin, symbols[i]);
     }
 
     return symbols;
@@ -343,7 +343,7 @@ chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const int pos, const bool inv
     }
 
     fft(buf, fft_len);
-    //printf("fft %ld:\n", pos / this->sps);
+    //printf("fft %d:\n", pos / this->sps);
     //LoraPhy::print_array(buf, 16);
 
     // find max fft bin
@@ -356,7 +356,7 @@ chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const int pos, const bool inv
              mabs = abs;
          }
     }
-    //printf("%ld) max bin is: %d  (val: %f)\n", pos, mbin, mabs);
+    //printf("%d) max bin is: %d  (val: %f)\n", pos, mbin, mabs);
 
     return chirpval_t(mbin, static_cast<int>(mabs));
 }
