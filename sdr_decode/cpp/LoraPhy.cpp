@@ -58,11 +58,13 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
         if(ctr++ % 1000 == 0) printf("kloop# %d\n", ctr/1000);
 
         if(get_sample(sig)) return {-1, -1, -1};
-        const int fbin = this->dechirp(sig, 0, invert).first;
-        // printf("detect_preamble(%d) - fbin: %d\n", det_count, fbin);
+        const chirpval_t cv = this->dechirp(sig, 0, invert);
+        const int fbin = cv.first;
+        const int mabs = cv.second;
+        //printf("detect_preamble(%d) - fbin: %d  mabs: %d\n", det_count, fbin, mabs);
 
         // todo: allow extra preamble chirps
-        if(abs(fbin - fbin_last) <= this->ft_det_bins) {
+        if((mabs > 0) && (abs(fbin - fbin_last) <= this->ft_det_bins)) {
             det_count++;
             if(det_count >= this->plen) {
                 // preamble detected, adjust fft bin to zero
@@ -435,9 +437,8 @@ int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swa
 
     if(swap_iq) {
         // swap I and Q channels
-        outbuf.resize(count);
-        for(long i=0; i<count; i++) {
-            outbuf[i] = complex_t(buf[i].imag(), buf[i].real());
+        for(cpvarray_t::value_type& cpx : outbuf) {
+            cpx = complex_t(cpx.imag(), cpx.real());
         }
     } else {
         outbuf.swap(buf);
