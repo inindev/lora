@@ -17,7 +17,7 @@ $(TARGET): main.o LoraPhy.o
 main.o: main.cpp LoraPhy.h types.h
 	$(CC) $(CFLAGS) -c main.cpp
 
-LoraPhy.o: LoraPhy.cpp LoraPhy.h types.h fft.h
+LoraPhy.o: LoraPhy.cpp LoraPhy.h fft.h sdr_stream.h types.h fft.h
 	$(CC) $(CFLAGS) -c LoraPhy.cpp
 
 .PHONY: clean
