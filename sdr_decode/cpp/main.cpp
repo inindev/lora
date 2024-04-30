@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     }
 
     // settings
-    const int sample_bits = 32;
+    const int sample_bits = 8;
     const bool swap_iq = false;
     const bool invert  = false;
     const int sf = 7;
@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
 
     for(;;) {
         int rc = do_work(phy, invert);
-        if(rc != 0) {
+        if(rc == 3) {
             return rc;
         }
     }
