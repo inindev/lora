@@ -8,11 +8,12 @@
 LoraPhy::LoraPhy(void)
   : sf(0), bw(0), sps(0), fs(0), cr(0),
     use_ldro(0), use_crc(0), use_hamming(0), has_header(0),
-    plen(0), ft_det_bins(0) { }
+    plen(0), ft_det_bins(0), get_sample_fcn(nullptr) { }
 
 LoraPhy::~LoraPhy() { }
 
-void LoraPhy::init(const int sf, const int bw, const int plen) {
+int LoraPhy::init(const std::string& filename, const int sample_bits, const bool swap_iq,
+                  const int sf, const int bw, const int plen) {
     this->sf          = sf;
     this->bw          = bw;
     this->sps         = 2 * pow(2, sf);
@@ -27,14 +28,28 @@ void LoraPhy::init(const int sf, const int bw, const int plen) {
 
     LoraPhy::chirp(this->sps, this->fs, this->bw, false, this->upchirp);
     LoraPhy::chirp(this->sps, this->fs, this->bw, true, this->downchirp);
-}
 
-std::tuple<int, int, int> LoraPhy::detect_preamble(std::ifstream& ifs, const bool invert) {
+    ifs.open(("-"==filename) ? "/dev/stdin" : filename);
     if(!ifs) {
-        fprintf(stderr, "error: detect_preamble - invalid data stream\n");
-        return {-1, -1, -1};
+        fprintf(stderr, "error: LoraPhy::init - unable to open input source - filename: %s\n", filename.c_str());
+        return 2;
     }
 
+    if(sample_bits == 8) {
+        this->get_sample_fcn = swap_iq ? sdr_stream::cu8_qi_sample : sdr_stream::cu8_iq_sample;
+    }
+    else if(sample_bits == 32) {
+        this->get_sample_fcn = swap_iq ? sdr_stream::cf32_qi_sample : sdr_stream::cf32_iq_sample;
+    }
+    else {
+        printf("error: LoraPhy::init - invalid bits per sample setting: %d\n", sample_bits);
+        return 3;
+    }
+
+    return 0;
+}
+
+std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
     int det_count = 1;  // current sample == 1
     int fbin_last = 0;
     int ctr = 0;
@@ -42,7 +57,7 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(std::ifstream& ifs, const boo
     while(ifs.good()) {
         if(ctr++ % 1000 == 0) printf("kloop# %d\n", ctr/1000);
 
-        if(get_sample(ifs, sig)) return {-1, -1, -1};
+        if(get_sample(sig)) return {-1, -1, -1};
         const int fbin = this->dechirp(sig, 0, invert).first;
         // printf("detect_preamble(%d) - fbin: %d\n", det_count, fbin);
 
@@ -59,10 +74,10 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(std::ifstream& ifs, const boo
                 }
 
                 // read network id
-                if(get_sample(ifs, sig, pos_offs)) return {-1, -1, -1};
+                if(get_sample(sig, pos_offs)) return {-1, -1, -1};
                 int fbin1 = this->dechirp(sig, 0, invert).first;
 
-                if(get_sample(ifs, sig)) return {-1, -1, -1};
+                if(get_sample(sig)) return {-1, -1, -1};
                 int fbin2 = this->dechirp(sig, 0, invert).first;
                 if(invert) {
                     fbin1 = this->sps - fbin1;  // inverted chirp, non-inverted IQ
@@ -87,22 +102,17 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(std::ifstream& ifs, const boo
 }
 
 // look for the start of frame delimiter
-sfdinfo_t LoraPhy::detect_sfd(std::ifstream& ifs, const bool invert) {
-    if(!ifs) {
-        fprintf(stderr, "error: detect_sfd - invalid data stream\n");
-        return sfdinfo_t(-1, -1);
-    }
-
+sfdinfo_t LoraPhy::detect_sfd(const bool invert) {
     // scan up to five samples looking for the sfd
     cpvarray_t sig(this->sps);
     for(int i=0; i<5; i++) {
-        if(get_sample(ifs, sig)) return sfdinfo_t(-1, -1);
+        if(get_sample(sig)) return sfdinfo_t(-1, -1);
         int mval_up = dechirp(sig, 0, invert).second;
         int mval_dn = dechirp(sig, 0, !invert).second;
         if(mval_dn > mval_up) {
             // downchirp detected
             // look for second downchirp at 1.25 sps
-            if(get_sample(ifs, sig, 0.25 * this->sps)) return sfdinfo_t(-1, -1);
+            if(get_sample(sig, 0.25 * this->sps)) return sfdinfo_t(-1, -1);
             mval_up = dechirp(sig, 0, invert).second;
             mval_dn = dechirp(sig, 0, !invert).second;
             if(mval_dn > mval_up) {
@@ -119,14 +129,9 @@ sfdinfo_t LoraPhy::detect_sfd(std::ifstream& ifs, const bool invert) {
 
 
 // <payload_len, cr, crc, is_valid>
-std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(std::ifstream& ifs, const bool invert) {
-    if(!ifs) {
-        fprintf(stderr, "error: decode_header - invalid data stream\n");
-        return {0, 0, 0, false};
-    }
-
+std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const bool invert) {
     cpvarray_t sig(8 * this->sps);
-    if(get_sample(ifs, sig)) return {0, 0, 0, false};
+    if(get_sample(sig)) return {0, 0, 0, false};
 
     u16varray_t symbols(8);
     for(int i=0; i<8; i++) {
@@ -167,13 +172,13 @@ std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(std::ifstream
     return {payload_len, cr, crc, is_valid};
 }
 
-u16varray_t LoraPhy::decode_payload(std::ifstream& ifs, const uint8_t payload_len, const bool invert) {
+u16varray_t LoraPhy::decode_payload(const uint8_t payload_len, const bool invert) {
     const uint8_t symcnt = calc_payload_symbol_count(payload_len);
 
     cpvarray_t sig(this->sps);
     u16varray_t symbols(symcnt);
     for(uint8_t i=0; i<symcnt; i++) {
-        if(get_sample(ifs, sig)) {
+        if(get_sample(sig)) {
             fprintf(stderr, "error: decode_payload - unexpected end of data reached - sym_num:%d\n", i);
             return u16varray_t();
         }
@@ -381,32 +386,22 @@ void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_dow
     outbuf.swap(buf);
 }
 
-int LoraPhy::get_sample(std::ifstream& ifs, cpvarray_t& buf, const int offs, const bool swap_iq) {
+int LoraPhy::get_sample(cpvarray_t& buf, const int skip) {
     int rc = ifs.rdstate();
     if(rc != 0) {
-        fprintf(stderr, "error: get_sample - cannot read from input stream - rc: %d\n", rc);
+        fprintf(stderr, "error: LoraPhy::get_sample - cannot read from input stream - rc: %d\n", rc);
         return rc;
     }
 
-    if(offs > 0) {  // move the stream forward by the specified amount
-        ifs.ignore(offs * sizeof(cpvarray_t::value_type));
-    }
-
-    ifs.read(reinterpret_cast<char*>(&buf[0]), buf.size() * sizeof(cpvarray_t::value_type));
+    this->get_sample_fcn(ifs, buf, skip);
 
     rc = ifs.rdstate();
     if(rc != 0) {
-        fprintf(stderr, "error: get_sample - read from input stream failed - rc: %d\n", rc);
+        fprintf(stderr, "error: LoraPhy::get_sample - read from input stream failed - rc: %d\n", rc);
         return rc;
     }
 
-    if(swap_iq) {  // swap I and Q channels
-        for(int i=0; i<buf.size(); i++) {
-            buf[i] = complex_t(buf[i].imag(), buf[i].real());
-        }
-    }
-
-    return 0; // success
+    return 0;
 }
 
 int LoraPhy::load(const std::string filename, cpvarray_t& outbuf, const bool swap_iq) {

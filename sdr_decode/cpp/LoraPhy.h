@@ -6,6 +6,7 @@
 #include <fstream>
 
 #include "types.h"
+#include "sdr_stream.h"
 
 typedef std::pair<int, int> chirpval_t;
 typedef std::pair<int, int> sfdinfo_t;
@@ -34,13 +35,13 @@ struct LoraPhy
     LoraPhy(void);
     virtual ~LoraPhy(void);
 
-    void init(const int sf, const int bw, const int plen);
+    int init(const std::string& filename, const int sample_bits, const bool swap_iq, const int sf, const int bw, const int plen);
 
-    std::tuple<int, int, int> detect_preamble(std::ifstream& ifs, const bool invert=false);
-    sfdinfo_t detect_sfd(std::ifstream& ifs, const bool invert=false);
+    std::tuple<int, int, int> detect_preamble(const bool invert=false);
+    sfdinfo_t detect_sfd(const bool invert=false);
 
-    std::tuple<uint8_t, uint8_t, uint8_t, bool> decode_header(std::ifstream& ifs, const bool invert=false);
-    u16varray_t decode_payload(std::ifstream& ifs, const uint8_t payload_len, const bool invert=false);
+    std::tuple<uint8_t, uint8_t, uint8_t, bool> decode_header(const bool invert=false);
+    u16varray_t decode_payload(const uint8_t payload_len, const bool invert=false);
 
     uint8_t calc_payload_symbol_count(const uint8_t payload_len);
     uint8_t calc_header_csum(const u8varray_t& header);
@@ -53,7 +54,8 @@ struct LoraPhy
     chirpval_t dechirp(const cpvarray_t& sig, const int pos=0, const bool invert=false);
     static void chirp(const int sps, const int fs, const int bw, const bool is_downchirp, cpvarray_t& outbuf);
 
-    static int get_sample(std::ifstream& ifs, cpvarray_t& buf, const int offs=0, const bool swap_iq=false);
+    int get_sample(cpvarray_t& buf, const int skip=0);
+
     static int load(const std::string filename, cpvarray_t& buf, const bool swap_iq=false);
     static int save(const std::string filename, const cpvarray_t& buf);
     static void print_array(const cpvarray_t& buf, const int num=0);
@@ -74,5 +76,8 @@ private:
 
     cpvarray_t upchirp;
     cpvarray_t downchirp;
+
+    std::ifstream ifs;
+    std::function<void(std::ifstream& ifs, cpvarray_t&, int)> get_sample_fcn;
 };
 

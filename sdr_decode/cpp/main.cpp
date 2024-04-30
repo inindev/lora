@@ -10,31 +10,29 @@ uint32_t millis() {
 #include "../../sniffer1/payload_parse.h"
 
 
-int do_work(LoraPhy& phy, std::ifstream& ifs, const bool swap_iq, const bool invert) {
-    const auto [ppos, netid1, netid2] = phy.detect_preamble(ifs, invert);
+int do_work(LoraPhy& phy, const bool invert) {
+    const auto [ppos, netid1, netid2] = phy.detect_preamble(invert);
     if(ppos < 0) {
         fprintf(stderr, "error: preamble not detected\n");
         return 3;
     }
     printf("netid1: %d  netid2: %d\n", netid1, netid2);
 
-    const auto [pos_sfd, pos_hdr] = phy.detect_sfd(ifs, invert);
+    const auto [pos_sfd, pos_hdr] = phy.detect_sfd(invert);
     if(pos_sfd < 0) {
         fprintf(stderr, "error: sfd not detected\n");
         return 4;
     }
     // printf("sfd pos: %ld  hdr pos: %ld\n", pos_sfd, pos_hdr);
 
-    // cpvarray_t sig(256 * 8);
-    // phy.get_sample(ifs, sig);
-    const auto [payload_len, cr, crc, is_valid] = phy.decode_header(ifs, invert);
+    const auto [payload_len, cr, crc, is_valid] = phy.decode_header(invert);
     if(!is_valid) {
         fprintf(stderr, "error: header is invalid\n");
         return 5;
     }
     printf("header is valid - payload_len: %d  cr: %d  crc: %d\n", payload_len, cr, crc);
 
-    const u16varray_t& payload_symbols = phy.decode_payload(ifs, payload_len, invert);
+    const u16varray_t& payload_symbols = phy.decode_payload(payload_len, invert);
     // for(int i=0; i<payload_symbols.size(); i++) {
     //     printf("%d) payload_symbols:%3d\n", i, payload_symbols[i]);
     // }
@@ -79,29 +77,30 @@ int do_work(LoraPhy& phy, std::ifstream& ifs, const bool swap_iq, const bool inv
 // https://github.com/rxseger/rx_tools
 // rx_sdr -g12 -f 910300000 -s 250000 -F CF32 /tmp/lora.raw
 // rx_sdr -g12 -f 910300000 -s 250000 -F CF32 - | ./loraphy -
+// rx_sdr -g12 -f 910300000 -s 250000 -F CU8 - | ./loraphy -
 int main(int argc, char** argv) {
     if(argc < 2) {
         fprintf(stderr, "error: no input source specified\n");
         return 1;
     }
 
-    // test iq / chirp inversion
-    const bool test_inv = false;
-    const bool swap_iq = !test_inv ? false: true;
-    const bool invert  = !test_inv ? false: !swap_iq;
+    // settings
+    const int sample_bits = 32;
+    const bool swap_iq = false;
+    const bool invert  = false;
+    const int sf = 7;
+    const int bw = 125e3;
+    const int preamble_len = 8;
 
-    const std::string filename(argv[1]);
-    std::ifstream ifs(("-"==filename) ? "/dev/stdin" : filename);
-    if(!ifs) {
-        fprintf(stderr, "error: unable to open input source - filename: %s\n", filename.c_str());
+    LoraPhy phy;
+    const int rc = phy.init(argv[1], sample_bits, swap_iq, sf, bw, preamble_len);
+    if(rc != 0) {
+        fprintf(stderr, "error: unable to initialize input source - rc: %d  filename: %s\n", rc, argv[1]);
         return 2;
     }
 
-    LoraPhy phy;
-    phy.init(7, 125e3, 8);
-
     for(;;) {
-        int rc = do_work(phy, ifs, swap_iq, invert);
+        int rc = do_work(phy, invert);
         if(rc != 0) {
             return rc;
         }
