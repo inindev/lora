@@ -129,10 +129,10 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             det_count = 1; % current sample == 1
             fbin_last = 0;
             while(pos <= (length(this.sig) - this.sps))
-                fbin = this.dechirp(pos, invert);
+                [fbin, mval] = this.dechirp(pos, invert);
                 %fprintf('%4d) detect_preamble - fbin:%d\n', pos, fbin);
 
-                if(abs(fbin - fbin_last) <= this.ft_det_bins)
+                if((mval > 0) && (abs(fbin - fbin_last) <= this.ft_det_bins))
                     det_count = det_count + 1;
                     if(det_count >= preamble_len)
                         % preamble detected, adjust fft bin to zero
@@ -153,8 +153,8 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                             fbin2 = fbin2 - 1;
                         end
 
-                        netid1 = fbin1 / 2;
-                        netid2 = fbin2 / 2;
+                        netid1 = floor(fbin1 / 2);
+                        netid2 = floor(fbin2 / 2);
 
                         %fprintf('  *** preamble detected ***  fbin:%4d  x:%d  netid1:%d  netid2:%d\n', fbin, x, netid1, netid2);
                         return;
@@ -220,7 +220,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     fbin = fbin - 1;             % non-inverted chirp, inverted IQ
                 end
 
-                symbols(ii) = fbin / 2;
+                symbols(ii) = floor(fbin / 2);
                 %fprintf('%d) pos:%4d  fbin:%3d  -->  sym:%3d\n', ii, pos, fbin, symbols(ii));
 
                 pos = pos + this.sps;
@@ -269,7 +269,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     fbin = fbin - 1;             % non-inverted chirp, inverted IQ
                 end
 
-                symbols(ii) = fbin / 2;
+                symbols(ii) = floor(fbin / 2);
                 %fprintf('%d) pos:%4d  fbin:%3d  -->  sym:%3d\n', ii, pos, fbin, symbols(ii));
 
                 pos = pos + this.sps;
@@ -304,7 +304,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             if(use_ldro)
                 sym_b2 = bitshift(uint16(symbols), -2);
             else
-                sym_b2 = uint16(mod(symbols-1, 2^this.sf));
+                sym_b2 = uint16(mod(int16(symbols)-1, 2^this.sf));
             end
             sym_b3 = bitshift(sym_b2, -1);
             symbols_g = bitxor(sym_b2, sym_b3);
@@ -485,7 +485,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     axes((cdir-1)*sym_count + jj) = ax;
 
                     hold on
-                    mval = int8(mval);
+                    mval = uint16(mval);
                     plot(fbin, mval, 'rd');
                     if(use_legend)
                         legend('', sprintf('%d,%d', fbin, mval));
@@ -497,7 +497,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                         end
                         text(txtx, mval, sprintf('%d,%d', fbin, mval));
                     end
-                    %fprintf('%4d) plot(%d,%2d)  fbin:%3d  sym:%3d\n', tpos, cdir, jj, fbin, int8((fbin-1)/2));
+                    fprintf('%4d) plot(%d,%2d)  fbin:%3d  sym:%3d\n', tpos, cdir, jj, fbin, uint16((fbin-1)/2));
 
                     tpos = tpos + this.sps;
                 end
