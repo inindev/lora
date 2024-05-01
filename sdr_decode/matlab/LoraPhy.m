@@ -88,7 +88,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 0x0e, 0x1d, 0x3a, 0x75, 0xea, 0xd5, 0xaa, 0x55, 0xab, 0x57, 0xaf, 0x5f, 0xbe, 0x7c, 0xf9, 0xf2, ...
                 0xe5, 0xca, 0x94, 0x28, 0x50, 0xa1, 0x42, 0x84, 0x09, 0x13, 0x27, 0x4f, 0x9f, 0x3f, 0x7f, ]');
 
-            this.sig = LoraPhy.read(filename);
+            this.sig = LoraPhy.read_cu8(filename);
             this.sig = lowpass(this.sig, this.bw/2, file_fs);
             if(this.fs ~= file_fs)
                 this.sig = resample(this.sig, this.fs, file_fs);  % resample signal @ 2x bandwidth
@@ -525,7 +525,30 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             end
         end
 
-        function v = read(filename, count)
+        function v = read_cu8(filename, count)
+            % READ(filename, [count])
+            %   open filename and return the contents as a column vector,
+            %   treating them as 32 bit complex numbers
+            narginchk(1, 2);
+
+            if(nargin < 2)
+                count = Inf;
+            end
+
+            f = fopen(filename, 'rb');
+            if(f < 0)
+                v = 0;
+            else
+                t = fread(f, [2, count], 'uint8');
+                fclose(f);
+                t = (single(t) - 127.0) / 128.0;
+                v = t(1,:) + t(2,:)*1i;
+                [r, c] = size(v);
+                v = reshape(v, c, r);
+            end
+        end
+
+        function v = read_cf32(filename, count)
             % READ(filename, [count])
             %   open filename and return the contents as a column vector,
             %   treating them as 32 bit complex numbers
@@ -540,7 +563,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             if(f < 0)
                 v = 0;
             else
-                t = fread(f, [2, count], 'float');
+                t = fread(f, [2, count], 'float32');
                 fclose(f);
                 v = t(1,:) + t(2,:)*1i;
                 [r, c] = size(v);
@@ -548,7 +571,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             end
         end
 
-        function v = write(filename, data)
+        function v = write_cf32(filename, data)
             % WRITE(filename, data)
             %   write IQ data to 'filename'
             %   data format is interleaved 32-bit IQ float values: IQIQIQ....
