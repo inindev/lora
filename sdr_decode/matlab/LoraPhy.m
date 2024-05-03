@@ -14,8 +14,9 @@
 classdef LoraPhy < handle & matlab.mixin.Copyable
     properties (SetAccess = immutable)
         sf;            % spreading factor (7,8,9,10,11,12)
+        sr;            % sample rate: 2x
         bw;            % bandwidth 125 kHz
-        fs;            % sample rate: 2x bw = 250 kHz
+        fs;            % sample freq: sr * bw = 250 kHz
         cr;            % coding rate: (1:4/5 2:4/6 3:4/7 4:4/8)
         use_ldro;      % low data rate optimization
         use_crc;       % calculate cyclic redundancy check
@@ -27,7 +28,8 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
     properties (Access = private)
         sig;           % lora signal
         sps;           % samples per symbol
-        ft_over;       % fft size factor
+        ft_ratio;      % fft bins per sps
+        ft_sym_fct     % fft symbol factor
         ft_bins;       % number of fft bins
         whitening_seq; % lfsr: x^8+x^6+x^5+x^4+1
         upchirp;       % downchirp removal
@@ -41,19 +43,21 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 swap_iq = false;
             end
 
-            this.sf = sf;             % spreading factor (7,8,9,10,11,12)
-            this.bw = bw;             % bandwidth 125 kHz
-            this.fs = bw * 2;         % sample rate: 2x bw = 250 kHz
-            this.cr = 1;              % coding rate: (1:4/5 2:4/6 3:4/7 4:4/8)
-            this.use_ldro = 0;        % low data rate optimization (0/1)
-            this.use_crc = 1;         % cyclic redundancy check (0/1)
-            this.use_hamming = 1;     % hamming error detection and correction (0/1)
-            this.has_header = 1;      % decode header (0/1)
-            this.preamble_len = 8;    % preamble length
+            this.sf = sf;                   % spreading factor (7,8,9,10,11,12)
+            this.sr = 2;                    % sample rate: 2x
+            this.bw = bw;                   % bandwidth 125 kHz
+            this.fs = this.sr * bw;         % sample freq: sr * bw = 250 kHz
+            this.cr = 1;                    % coding rate: (1:4/5 2:4/6 3:4/7 4:4/8)
+            this.use_ldro = 0;              % low data rate optimization (0/1)
+            this.use_crc = 1;               % cyclic redundancy check (0/1)
+            this.use_hamming = 1;           % hamming error detection and correction (0/1)
+            this.has_header = 1;            % decode header (0/1)
+            this.preamble_len = 8;          % preamble length
 
-            this.sps = 2 * 2^sf;      % samples per symbol
-            this.ft_over = 2;         % fft size factor
-            this.ft_bins = this.sps * this.ft_over;  % number of fft bins per symbol
+            this.sps = this.sr * 2^sf;      % samples per symbol
+            this.ft_ratio = 2;              % fft bins per sps
+            this.ft_sym_fct = this.sr * this.ft_ratio; % fft symbol factor
+            this.ft_bins = this.ft_ratio * this.sps;   % fft bins per symbol
 
             % https://github.com/tapparelj/gr-lora_sdr/blob/master/lib/tables.h
             % linear-feedback shift register
@@ -128,14 +132,14 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 [fbin, mval] = this.dechirp(pos, invert);
                 %fprintf('%4d) detect_preamble - fbin:%d\n', pos, fbin);
 
-                if((mval > 0) && (abs(fbin - fbin_last) <= this.ft_over))
+                if((mval > 0) && (abs(fbin - fbin_last) <= this.ft_ratio))
                     det_count = det_count + 1;
                     if(det_count >= preamble_len)
                         % preamble detected, adjust fft bin to begin at 1
                         if(invert)
                             x = pos + fbin - 1;  % inverted chirp, non-inverted IQ
                         else
-                            x = pos - round((fbin-1)/this.ft_over);  % non-inverted chirp, inverted IQ
+                            x = pos - round((fbin-1)/this.ft_ratio);  % non-inverted chirp, inverted IQ
                         end
 
                         % read network id
@@ -143,7 +147,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                         fbin1 = this.dechirp(x, invert);
 
                         % check for preamble chirp (todo: accept n extra)
-                        if(abs(fbin1 - (x-pos)*this.ft_over - fbin) <= this.ft_over)
+                        if(abs(fbin1 - (x-pos)*this.ft_ratio - fbin) <= this.ft_ratio)
                             % this is another chirp, move forward again...
                             x = x + this.sps;
                             fbin1 = this.dechirp(x, invert);
@@ -160,8 +164,8 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                             fbin2 = fbin2 - 1;
                         end
 
-                        netid1 = round(fbin1 / (2*this.ft_over));
-                        netid2 = round(fbin2 / (2*this.ft_over));
+                        netid1 = round(fbin1 / this.ft_sym_fct);
+                        netid2 = round(fbin2 / this.ft_sym_fct);
 
                         %fprintf('  *** preamble detected ***  fbin:%4d  x:%d  netid1:%d  netid2:%d\n', fbin, x, netid1, netid2);
                         return;
@@ -227,7 +231,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     fbin = fbin - 1;             % non-inverted chirp, inverted IQ
                 end
 
-                symbols(ii) = round(fbin / (2*this.ft_over));
+                symbols(ii) = round(fbin / this.ft_sym_fct);
                 %fprintf('%d) pos:%4d  fbin:%3d  -->  sym:%3d\n', ii, pos, fbin, symbols(ii));
 
                 pos = pos + this.sps;
@@ -276,7 +280,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     fbin = fbin - 1;             % non-inverted chirp, inverted IQ
                 end
 
-                symbols(ii) = round(fbin / (2*this.ft_over));
+                symbols(ii) = round(fbin / this.ft_sym_fct);
                 %fprintf('%d) pos:%4d  fbin:%3d  -->  sym:%3d\n', ii, pos, fbin, symbols(ii));
 
                 pos = pos + this.sps;
