@@ -63,6 +63,7 @@ struct LoraPhy
 
 private:
     int sf;           // spreading factor (7,8,9,10,11,12)
+    int sr;           // sample rate: 2x
     int bw;           // bandwidth (125e3, 250e3, 500e3)
     int sps;          // samples per symbol
     int fs;           // sampling frequency (2x bandwidth)
@@ -72,7 +73,9 @@ private:
     int use_hamming;  // hamming error detection and correction
     int has_header;   // data has header
     int plen;         // chrips in preamble
-    int ft_det_bins;  // fft detect bin variance
+    int ft_ratio;     // fft bins per sps
+    int ft_sym_fct;   // fft symbol factor
+    int ft_bins;      // fft bins per symbol
 
     cpvarray_t upchirp;
     cpvarray_t downchirp;
