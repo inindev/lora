@@ -130,27 +130,33 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             fbin_last = 0;
             while(pos <= (length(this.sig) - this.sps))
                 [fbin, mval] = this.dechirp(pos, invert);
-                %fprintf('%4d) detect_preamble - fbin:%d\n', pos, fbin);
+                %fprintf('%d) detect_preamble (%4d) - fbin: %3d  mval: %3d\n', det_count, pos, fbin, mval);
 
-                if((mval > 0) && (abs(fbin - fbin_last) <= this.ft_ratio))
+                dfbin = abs(fbin - fbin_last);
+                if((mval > 15) && ((dfbin <= this.ft_ratio) || (dfbin > (this.ft_bins-this.ft_ratio))))
                     det_count = det_count + 1;
+                    pos_adj = mod(round((fbin-1)/this.ft_ratio), this.sps);
+                    if(pos_adj > 16)
+                        % move fbin to 1
+                        pos = pos - pos_adj;
+                        fbin = 1;
+                    end
+
                     if(det_count >= preamble_len)
                         % preamble detected, adjust fft bin to begin at 1
+                        pos_adj = mod(round((fbin-1)/this.ft_ratio), this.sps);
                         if(invert)
                             x = pos + fbin - 1;  % inverted chirp, non-inverted IQ
                         else
-                            x = pos - round((fbin-1)/this.ft_ratio);  % non-inverted chirp, inverted IQ
+                            x = pos - pos_adj;  % non-inverted chirp, inverted IQ
                         end
 
-                        % read network id
-                        x = x + this.sps;
-                        fbin1 = this.dechirp(x, invert);
-
-                        % check for preamble chirp (todo: accept n extra)
-                        if(abs(fbin1 - (x-pos)*this.ft_ratio - fbin) <= this.ft_ratio)
-                            % this is another chirp, move forward again...
+                        % consume any extra preamble chirps while looking
+                        % for network id 1
+                        while((dfbin <= this.ft_ratio) || (dfbin > (this.ft_bins-this.ft_ratio)))
                             x = x + this.sps;
                             fbin1 = this.dechirp(x, invert);
+                            dfbin = abs(fbin1 - fbin_last);
                         end
 
                         x = x + this.sps;
@@ -456,6 +462,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             ft_pow = abs(ft(1:this.ft_bins)) + abs(ft(this.ft_bins+1:2*this.ft_bins));
 
             [mval, fbin] = max(ft_pow);
+            mval = uint16(round(mval));
         end
 
         function plot_symbols(this, pos, sym_count, use_legend)
