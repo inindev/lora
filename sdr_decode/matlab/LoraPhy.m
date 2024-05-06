@@ -133,7 +133,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 %fprintf('%d) detect_preamble (%4d) - fbin: %3d  mval: %3d\n', det_count, pos, fbin, mval);
 
                 dfbin = abs(fbin - fbin_last);
-                if((mval > 15) && ((dfbin <= this.ft_ratio) || (dfbin > (this.ft_bins-this.ft_ratio))))
+                if((mval > 15) && ((dfbin <= this.ft_ratio) || (dfbin >= (this.ft_bins-this.ft_ratio))))
                     det_count = det_count + 1;
                     pos_adj = mod(round((fbin-1)/this.ft_ratio), this.sps);
                     if(pos_adj > 16)
