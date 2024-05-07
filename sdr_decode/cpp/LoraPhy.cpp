@@ -48,6 +48,7 @@ int LoraPhy::init(const std::string& filename, const int sample_bits, const bool
         printf("error: LoraPhy::init - invalid bits per sample setting: %d\n", sample_bits);
         return 3;
     }
+ifs.ignore(61 * sizeof(uint16_t));
 
     return 0;
 }
@@ -55,30 +56,38 @@ int LoraPhy::init(const std::string& filename, const int sample_bits, const bool
 std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
     int det_count = 1;  // current sample == 1
     int fbin_last = 0;
+    int pos_adj = 0;
     //int ctr = 0;
     cpvarray_t sig(this->sps);
     while(ifs.good()) {
         //if(ctr++ % 1000 == 0) printf("kloop# %d\n", ctr/1000);
-        if(get_sample(sig)) return {-1, -1, -1};
+        if(get_sample(sig, pos_adj)) return {-1, -1, -1};
         const chirpval_t cv = this->dechirp(sig, 0, invert);
-        const int fbin = cv.first;
+        int fbin = cv.first;
         const int mval = cv.second;
         //printf("detect_preamble(%d) - fbin: %d  mval: %d\n", det_count, fbin, mval);
 
         // todo: allow extra preamble chirps
-        if((mval > 0) && (std::abs(fbin - fbin_last) <= this->ft_ratio)) {
+        const int dfbin = std::abs(fbin - fbin_last);
+        if((mval > 15) && ((dfbin <= this->ft_ratio) || (dfbin >= (this->ft_bins - this->ft_ratio)))) {
             det_count++;
+            pos_adj = 0 - (fbin / static_cast<float>(this->ft_ratio));
+            if(pos_adj < -16) {
+                fbin = 0;
+            } else {
+                pos_adj = 0;
+            }
+
             if(det_count >= this->plen) {
                 // preamble detected, adjust fft bin to zero
-                int pos_offs = 0;
                 if(invert) {
-                    pos_offs = fbin;              // inverted chirp, non-inverted IQ
+                    pos_adj = fbin;                  // inverted chirp, non-inverted IQ
                 } else {
-                    pos_offs = this->sps - std::round(fbin/static_cast<float>(this->ft_ratio));  // non-inverted chirp, inverted IQ
+                    pos_adj = 0 - (fbin / static_cast<float>(this->ft_ratio));  // non-inverted chirp, inverted IQ
                 }
 
                 // read network id
-                if(get_sample(sig, pos_offs)) return {-1, -1, -1};
+                if(get_sample(sig, pos_adj)) return {-1, -1, -1};
                 int fbin1 = this->dechirp(sig, 0, invert).first;
 
                 if(get_sample(sig)) return {-1, -1, -1};
@@ -93,8 +102,8 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
                 const int netid1 = std::round(fbin1 / static_cast<float>(this->ft_sym_fct));
                 const int netid2 = std::round(fbin2 / static_cast<float>(this->ft_sym_fct));
 
-                //printf("\n  *** preamble detected ***  fbin:%4d  pos_offs:%d  netid1:%d  netid2:%d\n", fbin, pos_offs, netid1, netid2);
-                return {pos_offs, netid1, netid2};
+                //printf("\n  *** preamble detected ***  fbin:%4d  pos_adj:%d  netid1:%d  netid2:%d\n", fbin, pos_adj, netid1, netid2);
+                return {pos_adj, netid1, netid2};
             }
         } else {
             det_count = 1;
