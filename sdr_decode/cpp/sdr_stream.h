@@ -29,14 +29,20 @@ namespace sdr_stream
     };
 
     inline void cu8_iq_sample(std::ifstream& ifs, cpvarray_t& buf, const int skip) {
-        if(skip > 0) {  // move the stream forward by the specified amount
+        int offs = 0;
+        if(skip < 0) {  // partial buffer read
+            offs = ((0 - skip) % buf.size());
+            std::memcpy(&buf[0], &buf[buf.size() - offs], (offs * sizeof(cpvarray_t::value_type)));
+        }
+
+        else if(skip > 0) {  // move the stream forward by the specified amount
             ifs.ignore(skip * sizeof(uint16_t));
         }
 
-        uint16_t u16a[buf.size()];
-        ifs.read((char*)u16a, buf.size() * sizeof(uint16_t));
-        for(int i=0; i<buf.size(); i++) {
-            buf[i] = complex_t(
+        uint16_t u16a[buf.size() - offs];
+        ifs.read((char*)u16a, sizeof(u16a));
+        for(int i=0; i<(sizeof(u16a)/sizeof(uint16_t)); i++) {
+            buf[i+offs] = complex_t(
                 cu82f[u16a[i] & 0xff], // real
                 cu82f[u16a[i] >> 8]    // imag
             );
@@ -45,14 +51,20 @@ namespace sdr_stream
 
     // i & q swapped
     inline void cu8_qi_sample(std::ifstream& ifs, cpvarray_t& buf, const int skip) {
-        if(skip > 0) {  // move the stream forward by the specified amount
+        int offs = 0;
+        if(skip < 0) {  // partial buffer read
+            offs = ((0 - skip) % buf.size());
+            std::memcpy(&buf[0], &buf[buf.size() - offs], (offs * sizeof(cpvarray_t::value_type)));
+        }
+
+        else if(skip > 0) {  // move the stream forward by the specified amount
             ifs.ignore(skip * sizeof(uint16_t));
         }
 
-        uint16_t u16a[buf.size()];
-        ifs.read((char*)u16a, buf.size() * sizeof(uint16_t));
-        for(int i=0; i<buf.size(); i++) {
-            buf[i] = complex_t(
+        uint16_t u16a[buf.size() - offs];
+        ifs.read((char*)u16a, sizeof(u16a));
+        for(int i=0; i<(sizeof(u16a)/sizeof(uint16_t)); i++) {
+            buf[i+offs] = complex_t(
                 cu82f[u16a[i] >> 8],  // imag
                 cu82f[u16a[i] & 0xff] // real
             );
@@ -60,24 +72,36 @@ namespace sdr_stream
     }
 
     inline void cf32_iq_sample(std::ifstream& ifs, cpvarray_t& buf, const int skip) {
-        if(skip > 0) {  // move the stream forward by the specified amount
+        int offs = 0;
+        if(skip < 0) {  // partial buffer read
+            offs = ((0 - skip) % buf.size());
+            std::memcpy(&buf[0], &buf[buf.size() - offs], (offs * sizeof(cpvarray_t::value_type)));
+        }
+
+        else if(skip > 0) {  // move the stream forward by the specified amount
             ifs.ignore(skip * sizeof(cpvarray_t::value_type));
         }
 
-        ifs.read(reinterpret_cast<char*>(&buf[0]), buf.size() * sizeof(cpvarray_t::value_type));
+        ifs.read(reinterpret_cast<char*>(&buf[offs]), (buf.size() - offs) * sizeof(cpvarray_t::value_type));
     }
 
     // i & q swapped
     inline void cf32_qi_sample(std::ifstream& ifs, cpvarray_t& buf, const int skip) {
-        if(skip > 0) {  // move the stream forward by the specified amount
+        int offs = 0;
+        if(skip < 0) {  // partial buffer read
+            offs = ((0 - skip) % buf.size());
+            std::memcpy(&buf[0], &buf[buf.size() - offs], (offs * sizeof(cpvarray_t::value_type)));
+        }
+
+        else if(skip > 0) {  // move the stream forward by the specified amount
             ifs.ignore(skip * sizeof(cpvarray_t::value_type));
         }
 
-        ifs.read(reinterpret_cast<char*>(&buf[0]), buf.size() * sizeof(cpvarray_t::value_type));
+        ifs.read(reinterpret_cast<char*>(&buf[offs]), (buf.size() - offs) * sizeof(cpvarray_t::value_type));
 
         // swap I and Q channels
-        for(complex_t& cpx : buf) {
-            cpx = complex_t(cpx.imag(), cpx.real());
+        for(int i=offs; i<buf.size(); i++) {
+            buf[i] = complex_t(buf[i].imag(), buf[i].real());
         }
     }
 }
