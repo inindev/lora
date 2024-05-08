@@ -58,9 +58,9 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
     int pos_adj = 0;
     //int ctr = 0;
     cpvarray_t sig(this->sps);
-    while(ifs.good()) {
+    for(int rc=0;;) {
         //if(ctr++ % 1000 == 0) printf("kloop# %d\n", ctr/1000);
-        if(get_sample(sig, pos_adj)) return {-1, -1, -1};
+        if((rc = get_sample(sig, pos_adj))) return {-rc, -1, -1};
         const chirpval_t cv = this->dechirp(sig, 0, invert);
         int fbin = cv.first;
         const int mval = cv.second;
@@ -86,10 +86,10 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
                 }
 
                 // read network id
-                if(get_sample(sig, pos_adj)) return {-1, -1, -1};
+                if((rc = get_sample(sig, pos_adj))) return {-rc, -1, -1};
                 int fbin1 = this->dechirp(sig, 0, invert).first;
 
-                if(get_sample(sig)) return {-1, -1, -1};
+                if((rc = get_sample(sig))) return {-rc, -1, -1};
                 int fbin2 = this->dechirp(sig, 0, invert).first;
 
                 if(invert) {
@@ -102,7 +102,7 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
                 const int netid2 = std::round(fbin2 / static_cast<float>(this->ft_sym_fct));
 
                 //printf("\n  *** preamble detected ***  fbin:%4d  pos_adj:%d  netid1:%d  netid2:%d\n", fbin, pos_adj, netid1, netid2);
-                return {pos_adj, netid1, netid2};
+                return {0, netid1, netid2};
             }
         } else {
             det_count = 1;
@@ -402,7 +402,9 @@ void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_dow
 int LoraPhy::get_sample(cpvarray_t& buf, const int skip) {
     int rc = ifs.rdstate();
     if(rc != 0) {
-        fprintf(stderr, "error: LoraPhy::get_sample - cannot read from input stream - rc: %d\n", rc);
+        if(!ifs.eof()) {
+            fprintf(stderr, "error: LoraPhy::get_sample - cannot read from input stream - rc: %d\n", rc);
+        }
         return rc;
     }
 
@@ -410,7 +412,9 @@ int LoraPhy::get_sample(cpvarray_t& buf, const int skip) {
 
     rc = ifs.rdstate();
     if(rc != 0) {
-        fprintf(stderr, "error: LoraPhy::get_sample - read from input stream failed - rc: %d\n", rc);
+        if(!ifs.eof()) {
+            fprintf(stderr, "error: LoraPhy::get_sample - read from input stream failed - rc: %d\n", rc);
+        }
         return rc;
     }
 

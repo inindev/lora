@@ -11,8 +11,12 @@ uint32_t millis() {
 
 
 int do_work(LoraPhy& phy, const bool invert) {
-    const auto [ppos, netid1, netid2] = phy.detect_preamble(invert);
-    if(ppos < 0) {
+    const auto [rc, netid1, netid2] = phy.detect_preamble(invert);
+    if(rc & std::ios::eofbit) {
+        fprintf(stderr, "end of file reached\n");
+        return 1;
+    }
+    if(rc < 0) {
         fprintf(stderr, "error: preamble not detected\n");
         return 3;
     }
@@ -62,6 +66,7 @@ int do_work(LoraPhy& phy, const bool invert) {
 
     const u8varray_t& payload = phy.dewhiten(bytes, payload_len);
     print_mini_report(&payload[0], payload.size(), true);
+    printf("\n");
     // printf("payload_len: %zu\n", payload.size());
     // printf("payload: ");
     // for(int i=0; i<payload.size(); i++) {
@@ -99,9 +104,11 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    for(;;) {
-        int rc = do_work(phy, invert);
-        if(rc == 3) {
+    for(int rc=0; rc!=1;) {
+        // 0: continue
+        // 1: exit no error
+        rc = do_work(phy, invert);
+        if(rc < 0) {
             return rc;
         }
     }
