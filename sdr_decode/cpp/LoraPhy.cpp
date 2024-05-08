@@ -45,10 +45,9 @@ int LoraPhy::init(const std::string& filename, const int sample_bits, const bool
         this->get_sample_fcn = swap_iq ? sdr_stream::cf32_qi_sample : sdr_stream::cf32_iq_sample;
     }
     else {
-        printf("error: LoraPhy::init - invalid bits per sample setting: %d\n", sample_bits);
+        fprintf(stderr, "error: LoraPhy::init - invalid bits per sample setting: %d\n", sample_bits);
         return 3;
     }
-ifs.ignore(61 * sizeof(uint16_t));
 
     return 0;
 }
@@ -357,7 +356,7 @@ u8varray_t LoraPhy::dewhiten(const u8varray_t& bytes, const int len) {
 chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const int pos, const bool invert) {
     const cpvarray_t& chp = invert ? this->upchirp : this->downchirp;
 
-    // copy the chirped signal into a 2x buffer for fft proc
+    // copy the chirped signal into a 2x buffer for fft processing
     cpvarray_t buf(2*this->ft_bins);
     for(int i=0; i < this->sps; i++) {
         buf[i] = chp[i] * sig[pos + i];
