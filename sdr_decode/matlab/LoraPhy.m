@@ -1,15 +1,16 @@
-
+%
 % lora signal decoder
 % https://dl.acm.org/doi/10.1145/3546869
 % https://github.com/jkadbear/LoRaPHY/blob/master/LoRaPHY.m
 % https://github.com/tapparelj/gr-lora_sdr/blob/master/lib
-
+%
 % rx_sdr -g12 -f 910300000 -s 250000 -F CF32 /tmp/lora.raw
 % phy = LoraPhy(7, 125e3, '/tmp/lora.raw', 1024e3)
 % [x, netid1, netid2] = phy.detect_preamble();
 % [sfd, hdr] = phy.detect_sfd(x);
 % [payload_len, cr, crc, is_valid] = phy.decode_header(hdr);
 % phy.plot_symbols(1024, 13)
+%
 
 classdef LoraPhy < handle & matlab.mixin.Copyable
     properties (SetAccess = immutable)
@@ -153,7 +154,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
 
                         % consume any extra preamble chirps while looking
                         % for network id 1
-                        while((dfbin <= this.ft_ratio) || (dfbin > (this.ft_bins-this.ft_ratio)))
+                        while((dfbin <= this.ft_ratio) || (dfbin >= (this.ft_bins-this.ft_ratio)))
                             x = x + this.sps;
                             fbin1 = this.dechirp(x, invert);
                             dfbin = abs(fbin1 - fbin_last);
