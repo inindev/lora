@@ -66,8 +66,7 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
         const int mval = cv.second;
         //printf("detect_preamble(%d) - fbin: %d  mval: %d\n", det_count, fbin, mval);
 
-        // todo: allow extra preamble chirps
-        const int dfbin = std::abs(fbin - fbin_last);
+        int dfbin = std::abs(fbin - fbin_last);
         if((mval > 15) && ((dfbin <= this->ft_ratio) || (dfbin >= (this->ft_bins - this->ft_ratio)))) {
             det_count++;
             pos_adj = 0 - (fbin / static_cast<float>(this->ft_ratio));
@@ -85,9 +84,14 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
                     pos_adj = 0 - (fbin / static_cast<float>(this->ft_ratio));  // non-inverted chirp, inverted IQ
                 }
 
-                // read network id
-                if((rc = get_sample(sig, pos_adj))) return {-rc, -1, -1};
-                int fbin1 = this->dechirp(sig, 0, invert).first;
+                // consume any extra preamble chirps while looking for network id 1
+                int fbin1 = 0;
+                while((dfbin <= this->ft_ratio) || (dfbin >= (this->ft_bins - this->ft_ratio))) {
+                    // read network id
+                    if((rc = get_sample(sig, pos_adj))) return {-rc, -1, -1};
+                    fbin1 = this->dechirp(sig, 0, invert).first;
+                    dfbin = abs(fbin1 - fbin_last);
+                }
 
                 if((rc = get_sample(sig))) return {-rc, -1, -1};
                 int fbin2 = this->dechirp(sig, 0, invert).first;
