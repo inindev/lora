@@ -71,6 +71,48 @@ namespace sdr_stream
         }
     }
 
+    inline void cs16_iq_sample(std::ifstream& ifs, cpvarray_t& buf, const int skip) {
+        int offs = 0;
+        if(skip < 0) {  // partial buffer read
+            offs = ((0 - skip) % buf.size());
+            std::memcpy(&buf[0], &buf[buf.size() - offs], (offs * sizeof(cpvarray_t::value_type)));
+        }
+
+        else if(skip > 0) {  // move the stream forward by the specified amount
+            ifs.ignore(skip * sizeof(uint32_t));
+        }
+
+        uint32_t u32a[buf.size() - offs];
+        ifs.read((char*)u32a, sizeof(u32a));
+        for(int i=0; i<(sizeof(u32a)/sizeof(uint32_t)); i++) {
+            buf[i+offs] = complex_t(
+                (static_cast<int16_t>(u32a[i] & 0xffff) / 32768.0), // real
+                (static_cast<int16_t>(u32a[i] >> 16) / 32768.0)     // imag
+            );
+        }
+    }
+
+    inline void cs16_qi_sample(std::ifstream& ifs, cpvarray_t& buf, const int skip) {
+        int offs = 0;
+        if(skip < 0) {  // partial buffer read
+            offs = ((0 - skip) % buf.size());
+            std::memcpy(&buf[0], &buf[buf.size() - offs], (offs * sizeof(cpvarray_t::value_type)));
+        }
+
+        else if(skip > 0) {  // move the stream forward by the specified amount
+            ifs.ignore(skip * sizeof(uint32_t));
+        }
+
+        uint32_t u32a[buf.size() - offs];
+        ifs.read((char*)u32a, sizeof(u32a));
+        for(int i=0; i<(sizeof(u32a)/sizeof(uint32_t)); i++) {
+            buf[i+offs] = complex_t(
+                (static_cast<int16_t>(u32a[i] >> 16) / 32768.0),   // imag
+                (static_cast<int16_t>(u32a[i] & 0xffff) / 32768.0) // real
+            );
+        }
+    }
+
     inline void cf32_iq_sample(std::ifstream& ifs, cpvarray_t& buf, const int skip) {
         int offs = 0;
         if(skip < 0) {  // partial buffer read
