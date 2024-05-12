@@ -1,5 +1,7 @@
 
-// copyright (C) 2024, John Clark <inindev@gmail.com>
+// Copyright (c) 2024, John Clark <inindev@gmail.com>
+
+#pragma once
 
 #include <string>
 #include <stdint.h>

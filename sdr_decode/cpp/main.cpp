@@ -1,4 +1,6 @@
 
+// Copyright (c) 2024, John Clark <inindev@gmail.com>
+
 #include "LoraPhy.h"
 
 #define max std::max

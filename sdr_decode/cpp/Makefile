@@ -1,5 +1,5 @@
 
-# copyright (C) 2024, John Clark <inindev@gmail.com>
+# Copyright (c) 2024, John Clark <inindev@gmail.com>
 
 CC = clang++
 #CC = g++

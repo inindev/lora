@@ -1,5 +1,5 @@
 
-// Copyright (C) 2024, John Clark <inindev@gmail.com>
+// Copyright (c) 2024, John Clark <inindev@gmail.com>
 
 const char* rst = "\033[m";
 const char* bld = "\033[1m";

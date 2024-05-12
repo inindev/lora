@@ -1,4 +1,8 @@
 
+// Copyright (c) 2024, John Clark <inindev@gmail.com>
+
+#pragma once
+
 #include <iostream>
 #include <fstream>
 #include <memory>

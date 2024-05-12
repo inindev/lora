@@ -1,4 +1,6 @@
 
+% Copyright (c) 2024, John Clark <inindev@gmail.com>
+
 clc
 clear
 
@@ -58,7 +60,7 @@ payload = phy.dewhiten(bytes(1:payload_len));
 % display payload
 fprintf('payload: ');
 for ii = 1:length(payload)
-    fprintf('%02x ', payload(ii))
+    fprintf('%02x', payload(ii))
 end
 fprintf('\n');
 fprintf('csum1: %d\n', bytes(payload_len+1));

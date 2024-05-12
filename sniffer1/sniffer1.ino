@@ -1,5 +1,6 @@
 
-// Copyright (C) 2024, John Clark <inindev@gmail.com>
+// Copyright (c) 2024, John Clark <inindev@gmail.com>
+
 
 #include "Arduino.h"
 #include "Wire.h"
