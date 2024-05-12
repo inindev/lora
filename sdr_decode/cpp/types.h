@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <string>
+#include <cstdint>
 #include <complex>
 #include <valarray>
 

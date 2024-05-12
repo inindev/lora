@@ -90,8 +90,8 @@ namespace sdr_stream
         ifs.read((char*)u32a, sizeof(u32a));
         for(int i=0; i<(sizeof(u32a)/sizeof(uint32_t)); i++) {
             buf[i+offs] = complex_t(
-                (static_cast<int16_t>(u32a[i] & 0xffff) / 32768.0), // real
-                (static_cast<int16_t>(u32a[i] >> 16) / 32768.0)     // imag
+                (int16_t(u32a[i] & 0xffff) / 32768.0), // real
+                (int16_t(u32a[i] >> 16) / 32768.0)     // imag
             );
         }
     }
@@ -111,8 +111,8 @@ namespace sdr_stream
         ifs.read((char*)u32a, sizeof(u32a));
         for(int i=0; i<(sizeof(u32a)/sizeof(uint32_t)); i++) {
             buf[i+offs] = complex_t(
-                (static_cast<int16_t>(u32a[i] >> 16) / 32768.0),   // imag
-                (static_cast<int16_t>(u32a[i] & 0xffff) / 32768.0) // real
+                (int16_t(u32a[i] >> 16) / 32768.0),   // imag
+                (int16_t(u32a[i] & 0xffff) / 32768.0) // real
             );
         }
     }

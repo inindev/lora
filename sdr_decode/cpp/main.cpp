@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     }
 
     // settings
-    const int sample_bits = 8;
+    const int sample_bits = 16;
     const bool swap_iq = false;
     const bool invert  = false;
     const int sf = 7;

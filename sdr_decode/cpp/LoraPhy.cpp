@@ -17,7 +17,7 @@ int LoraPhy::init(const std::string& filename, const int sample_bits, const bool
     this->sf          = sf;
     this->sr          = 2;
     this->bw          = bw;
-    this->sps         = this->sr * pow(2, sf);
+    this->sps         = this->sr << sf;
     this->fs          = this->sr * bw;
     this->cr          = 1; // 4/5
     this->use_ldro    = 0;
@@ -41,6 +41,9 @@ int LoraPhy::init(const std::string& filename, const int sample_bits, const bool
     if(sample_bits == 8) {
         this->get_sample_fcn = swap_iq ? sdr_stream::cu8_qi_sample : sdr_stream::cu8_iq_sample;
     }
+    else if(sample_bits == 16) {
+        this->get_sample_fcn = swap_iq ? sdr_stream::cs16_qi_sample : sdr_stream::cs16_iq_sample;
+    }
     else if(sample_bits == 32) {
         this->get_sample_fcn = swap_iq ? sdr_stream::cf32_qi_sample : sdr_stream::cf32_iq_sample;
     }
@@ -61,17 +64,19 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
     for(int rc=0;;) {
         //if(ctr++ % 1000 == 0) printf("kloop# %d\n", ctr/1000);
         if((rc = get_sample(sig, pos_adj))) return {-rc, -1, -1};
+        pos_adj = 0;
         const chirpval_t cv = this->dechirp(sig, 0, invert);
         int fbin = cv.first;
         const int mval = cv.second;
-        //printf("detect_preamble(%d) - fbin: %d  mval: %d\n", det_count, fbin, mval);
+        //printf("%d) detect_preamble(%d) - fbin: %d  mval: %d\n", det_count, pos_adj, fbin, mval);
 
         int dfbin = std::abs(fbin - fbin_last);
         if((mval > 15) && ((dfbin <= this->ft_ratio) || (dfbin >= (this->ft_bins - this->ft_ratio)))) {
             det_count++;
-            pos_adj = 0 - (fbin / static_cast<float>(this->ft_ratio));
+            pos_adj = 0 - (fbin / complex_t::value_type(this->ft_ratio));
             if(pos_adj < -16) {
                 fbin = 0;
+                //printf("adjust: %d\n", pos_adj);
             } else {
                 pos_adj = 0;
             }
@@ -81,7 +86,7 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
                 if(invert) {
                     pos_adj = fbin;                  // inverted chirp, non-inverted IQ
                 } else {
-                    pos_adj = 0 - (fbin / static_cast<float>(this->ft_ratio));  // non-inverted chirp, inverted IQ
+                    pos_adj = 0 - (fbin / complex_t::value_type(this->ft_ratio));  // non-inverted chirp, inverted IQ
                 }
 
                 // consume any extra preamble chirps while looking for network id 1
@@ -102,8 +107,8 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
                 }
                 // non-inverted chirp, inverted IQ needs no adjustment
 
-                const int netid1 = std::round(fbin1 / static_cast<float>(this->ft_sym_fct));
-                const int netid2 = std::round(fbin2 / static_cast<float>(this->ft_sym_fct));
+                const int netid1 = std::round((fbin1 - fbin) / complex_t::value_type(this->ft_sym_fct));
+                const int netid2 = std::round((fbin2 - fbin) / complex_t::value_type(this->ft_sym_fct));
 
                 //printf("\n  *** preamble detected ***  fbin:%4d  pos_adj:%d  netid1:%d  netid2:%d\n", fbin, pos_adj, netid1, netid2);
                 return {0, netid1, netid2};
@@ -160,7 +165,7 @@ std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const bool in
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[i] = std::round(fbin / static_cast<float>(this->ft_sym_fct));
+        symbols[i] = std::round(fbin / complex_t::value_type(this->ft_sym_fct));
         //printf("symbols[%d]: %d\n", i, symbols[i]);
     }
 
@@ -209,7 +214,7 @@ u16varray_t LoraPhy::decode_payload(const uint8_t payload_len, const bool invert
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[i] = std::round(fbin / static_cast<float>(this->ft_sym_fct));
+        symbols[i] = std::round(fbin / complex_t::value_type(this->ft_sym_fct));
         //printf("%d) fbin:%3d  -->  sym:%3d\n", i, fbin, symbols[i]);
     }
 
@@ -248,7 +253,7 @@ u16varray_t LoraPhy::gray_decode(const u16varray_t& symbols, const bool use_ldro
             symbols_g[i] = (sym_b2 ^ sym_b3);
         }
     } else {
-        const uint16_t sfb = pow(2, this->sf);
+        const uint16_t sfb = (1 << this->sf);
         for(int i=0; i<symcnt; i++) {
             const uint16_t sym_b2 = ((symbols[i] + 0xffff) % sfb);
             const uint16_t sym_b3 = (sym_b2 >> 1);
@@ -380,20 +385,20 @@ chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const int pos, const bool inv
     }
     //printf("%d) max bin is: %d  (val: %f)\n", pos, mbin, mval);
 
-    return chirpval_t(mbin, static_cast<int>(mval));
+    return chirpval_t(mbin, int(mval));
 }
 
 void LoraPhy::chirp(const int sps, const int fs, const int bw, const bool is_downchirp, cpvarray_t& outbuf) {
     const complex_t::value_type f0 = -bw/2.0 * (is_downchirp ? -1 : 1);
     const complex_t::value_type f1 =  bw/2.0 * (is_downchirp ? -1 : 1);
-    const complex_t::value_type t1 =  (sps-1) / static_cast<complex_t::value_type>(fs);
+    const complex_t::value_type t1 =  (sps-1) / complex_t::value_type(fs);
 
     const complex_t::value_type tau = 2.0*std::acos(-1);
     const complex_t::value_type beta = (f1 - f0) / (2.0*t1);
 
     cpvarray_t buf(sps);
     for(int i=0; i<sps; ++i) {
-        const complex_t::value_type t = i / static_cast<complex_t::value_type>(fs);
+        const complex_t::value_type t = i / complex_t::value_type(fs);
         buf[i] = complex_t(
              cos( tau * (beta * t*t + f0*t) ),
             -cos( tau * (beta * t*t + f0*t + 90.0/360.0) )
