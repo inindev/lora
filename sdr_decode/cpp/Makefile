@@ -14,10 +14,10 @@ TARGET = loraphy
 $(TARGET): main.o LoraPhy.o
 	$(CC) $(CFLAGS) -o $(TARGET) main.o LoraPhy.o
 
-main.o: main.cpp LoraPhy.h types.h
+main.o: main.cpp LoraPhy.h sdr_stream.h types.h
 	$(CC) $(CFLAGS) -c main.cpp
 
-LoraPhy.o: LoraPhy.cpp LoraPhy.h fft.h sdr_stream.h types.h fft.h
+LoraPhy.o: LoraPhy.cpp LoraPhy.h sdr_stream.h types.h fft.h
 	$(CC) $(CFLAGS) -c LoraPhy.cpp
 
 .PHONY: clean
