@@ -4,11 +4,14 @@
 #include "LoraPhy.h"
 #include "fft.h"
 
+#define FBIN2SYM(fbin)  (uint16_t(((this->sps<<1) + (fbin) - this->ft_bin0_offs) / complex_t::value_type(this->ft_sym_fct) + 0.5) % (1<<this->sf))
+
 
 LoraPhy::LoraPhy(void)
   : sf(0), sr(0), bw(0), sps(0), fs(0), cr(0), use_ldro(0),
     use_crc(0), use_hamming(0), has_header(0), plen(0),
-    ft_ratio(0), ft_sym_fct(0), ft_bins(0), get_sample_fcn(nullptr) { }
+    ft_ratio(0), ft_sym_fct(0), ft_bins(0), ft_bin0_offs(0),
+    get_sample_fcn(nullptr) { }
 
 LoraPhy::~LoraPhy() { }
 
@@ -71,7 +74,7 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
         //printf("%d) detect_preamble(%d) - fbin: %d  mval: %d\n", det_count, pos_adj, fbin, mval);
 
         int dfbin = std::abs(fbin - fbin_last);
-        if((mval > 15) && ((dfbin <= this->ft_ratio) || (dfbin >= (this->ft_bins - this->ft_ratio)))) {
+        if((mval > 0) && ((dfbin <= this->ft_ratio) || (dfbin >= (this->ft_bins - this->ft_ratio)))) {
             det_count++;
             pos_adj = 0 - (fbin / complex_t::value_type(this->ft_ratio));
             if(pos_adj < -16) {
@@ -82,18 +85,14 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
             }
 
             if(det_count >= this->plen) {
-                // preamble detected, adjust fft bin to zero
-                if(invert) {
-                    pos_adj = fbin;                  // inverted chirp, non-inverted IQ
-                } else {
-                    pos_adj = 0 - (fbin / complex_t::value_type(this->ft_ratio));  // non-inverted chirp, inverted IQ
-                }
+                // preamble detected, store the actual offset from bin0
+                this->ft_bin0_offs = fbin;
 
                 // consume any extra preamble chirps while looking for network id 1
                 int fbin1 = 0;
                 while((dfbin <= this->ft_ratio) || (dfbin >= (this->ft_bins - this->ft_ratio))) {
                     // read network id
-                    if((rc = get_sample(sig, pos_adj))) return {-rc, -1, -1};
+                    if((rc = get_sample(sig))) return {-rc, -1, -1};
                     fbin1 = this->dechirp(sig, 0, invert).first;
                     dfbin = abs(fbin1 - fbin_last);
                 }
@@ -107,8 +106,8 @@ std::tuple<int, int, int> LoraPhy::detect_preamble(const bool invert) {
                 }
                 // non-inverted chirp, inverted IQ needs no adjustment
 
-                const int netid1 = std::round((fbin1 - fbin) / complex_t::value_type(this->ft_sym_fct));
-                const int netid2 = std::round((fbin2 - fbin) / complex_t::value_type(this->ft_sym_fct));
+                const int netid1 = FBIN2SYM(fbin1);
+                const int netid2 = FBIN2SYM(fbin2);
 
                 //printf("\n  *** preamble detected ***  fbin:%4d  pos_adj:%d  netid1:%d  netid2:%d\n", fbin, pos_adj, netid1, netid2);
                 return {0, netid1, netid2};
@@ -165,7 +164,7 @@ std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const bool in
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[i] = std::round(fbin / complex_t::value_type(this->ft_sym_fct));
+        symbols[i] = FBIN2SYM(fbin);
         //printf("symbols[%d]: %d\n", i, symbols[i]);
     }
 
@@ -214,7 +213,8 @@ u16varray_t LoraPhy::decode_payload(const uint8_t payload_len, const bool invert
         }
         // non-inverted chirp, inverted IQ needs no adjustment
 
-        symbols[i] = std::round(fbin / complex_t::value_type(this->ft_sym_fct));
+        symbols[i] = FBIN2SYM(fbin);
+
         //printf("%d) fbin:%3d  -->  sym:%3d\n", i, fbin, symbols[i]);
     }
 

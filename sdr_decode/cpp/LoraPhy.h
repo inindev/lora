@@ -78,6 +78,7 @@ private:
     int ft_ratio;     // fft bins per sps
     int ft_sym_fct;   // fft symbol factor
     int ft_bins;      // fft bins per symbol
+    int ft_bin0_offs; // offset from bin0
 
     cpvarray_t upchirp;
     cpvarray_t downchirp;
