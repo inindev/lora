@@ -13,6 +13,7 @@ uint32_t millis() {
 
 
 int do_work(LoraPhy& phy, const bool invert) {
+    printf("------------------------\n");
     const auto [rc, netid1, netid2] = phy.detect_preamble(invert);
     if(rc & std::ios::eofbit) {
         fprintf(stderr, "end of file reached\n");
