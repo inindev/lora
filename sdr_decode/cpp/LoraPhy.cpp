@@ -4,7 +4,7 @@
 #include "LoraPhy.h"
 #include "fft.h"
 
-#define FBIN2SYM(fbin)  (uint16_t(((this->sps<<1) + (fbin) - this->ft_bin0_offs) / complex_t::value_type(this->ft_sym_fct) + 0.5) % (1<<this->sf))
+#define FBIN2SYM(fbin)  (((this->ft_bins + (fbin) - this->ft_bin0_offs + 1) & (this->ft_bins-1)) >> this->ft_ratio)
 
 
 LoraPhy::LoraPhy(void)
@@ -165,7 +165,7 @@ std::tuple<uint8_t, uint8_t, uint8_t, bool> LoraPhy::decode_header(const bool in
         // non-inverted chirp, inverted IQ needs no adjustment
 
         symbols[i] = FBIN2SYM(fbin);
-        //printf("symbols[%d]: %d\n", i, symbols[i]);
+        //printf("%d) fbin:%3d  -->  sym:%3d\n", i, fbin, symbols[i]);
     }
 
     // gray decoding
@@ -214,7 +214,6 @@ u16varray_t LoraPhy::decode_payload(const uint8_t payload_len, const bool invert
         // non-inverted chirp, inverted IQ needs no adjustment
 
         symbols[i] = FBIN2SYM(fbin);
-
         //printf("%d) fbin:%3d  -->  sym:%3d\n", i, fbin, symbols[i]);
     }
 
