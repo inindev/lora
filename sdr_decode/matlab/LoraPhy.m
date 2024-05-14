@@ -32,6 +32,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
         ft_ratio;      % fft bins per sps
         ft_sym_fct     % fft symbol factor
         ft_bins;       % number of fft bins
+        ft_bin1_offs   % offset from bin #1
         whitening_seq; % lfsr: x^8+x^6+x^5+x^4+1
         upchirp;       % downchirp removal
         downchirp;     % upchirp removal
@@ -59,6 +60,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             this.ft_ratio = 2;              % fft bins per sps
             this.ft_sym_fct = this.sr * this.ft_ratio; % fft symbol factor
             this.ft_bins = this.ft_ratio * this.sps;   % fft bins per symbol
+            this.ft_bin1_offs = 0;
 
             % https://github.com/tapparelj/gr-lora_sdr/blob/master/lib/tables.h
             % linear-feedback shift register
@@ -105,15 +107,15 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             this.downchirp = chirp(t, this.bw/2, t(end), -this.bw/2, 'linear', 0, 'complex').';
         end
 
-        function [x, netid1, netid2] = detect_preamble(this, pos, preamble_len, invert)
-            % DETECT_PREAMBLE(pos, [invert], [preamble_len])
+        function [sfd_pos, netid1, netid2] = detect_preamble(this, pos, preamble_len, invert)
+            % DETECT_PREAMBLE(pos, [preamble_len], [invert])
             % input:
             %   pos:           offset from the beginning of signal
+            %   preamble_len:  minimum preamble detect length
             %   invert:        detect downchirps rather than upchirps
-            %   preamble_len:  preamble length
             % output:
-            %    x:  signal position of fft bin0 for the last detected preamble chirp
-            x = 0;
+            %    sfd_pos:      signal position of sfd start
+            sfd_pos = 0;
             netid1 = 0;
             netid2 = 0;
 
@@ -134,9 +136,9 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 %fprintf('%d) detect_preamble (%4d) - fbin: %3d  mval: %3d\n', det_count, pos, fbin, mval);
 
                 dfbin = abs(fbin - fbin_last);
-                if((mval > 15) && ((dfbin <= this.ft_ratio) || (dfbin >= (this.ft_bins-this.ft_ratio))))
+                if((mval > 1) && ((dfbin <= this.ft_ratio) || (dfbin >= (this.ft_bins-this.ft_ratio))))
                     det_count = det_count + 1;
-                    pos_adj = mod(round((fbin-1)/this.ft_ratio), this.sps);
+                    pos_adj = uint16((fbin-1) / this.ft_ratio);
                     if(pos_adj > 16)
                         % move fbin to 1
                         pos = pos - pos_adj;
@@ -144,37 +146,30 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     end
 
                     if(det_count >= preamble_len)
-                        % preamble detected, adjust fft bin to begin at 1
-                        pos_adj = mod(round((fbin-1)/this.ft_ratio), this.sps);
-                        if(invert)
-                            x = pos + fbin - 1;  % inverted chirp, non-inverted IQ
-                        else
-                            x = pos - pos_adj;  % non-inverted chirp, inverted IQ
-                        end
+                        % preamble detected, store the offset to the first fft bin
+                        this.ft_bin1_offs = fbin - 1;
 
                         % consume any extra preamble chirps while looking
                         % for network id 1
                         while((dfbin <= this.ft_ratio) || (dfbin >= (this.ft_bins-this.ft_ratio)))
-                            x = x + this.sps;
-                            fbin1 = this.dechirp(x, invert);
+                            pos = pos + this.sps;
+                            fbin1 = this.dechirp(pos, invert);
                             dfbin = abs(fbin1 - fbin_last);
                         end
 
-                        x = x + this.sps;
-                        fbin2 = this.dechirp(x, invert);
+                        pos = pos + this.sps;
+                        fbin2 = this.dechirp(pos, invert);
 
                         if(invert)
                             fbin1 = this.sps - fbin1 + 1;  % inverted chirp, non-inverted IQ
                             fbin2 = this.sps - fbin2 + 1;
-                        else
-                            fbin1 = fbin1 - 1;             % non-inverted chirp, inverted IQ
-                            fbin2 = fbin2 - 1;
                         end
 
-                        netid1 = round(fbin1 / this.ft_sym_fct);
-                        netid2 = round(fbin2 / this.ft_sym_fct);
+                        netid1 = bitshift(bitand((this.ft_bins + fbin1 - this.ft_bin1_offs + 1), (this.ft_bins-1)), -this.ft_ratio);
+                        netid2 = bitshift(bitand((this.ft_bins + fbin2 - this.ft_bin1_offs + 1), (this.ft_bins-1)), -this.ft_ratio);
 
-                        %fprintf('  *** preamble detected ***  fbin:%4d  x:%d  netid1:%d  netid2:%d\n', fbin, x, netid1, netid2);
+                        sfd_pos = pos + this.sps;
+                        %fprintf('  *** preamble detected ***  fbin:%4d  sfd pos:%d  netid1:%d  netid2:%d\n', fbin, sfd_pos, netid1, netid2);
                         return;
                     end
                 else
@@ -238,7 +233,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     fbin = fbin - 1;             % non-inverted chirp, inverted IQ
                 end
 
-                symbols(ii) = round(fbin / this.ft_sym_fct);
+                symbols(ii) = bitshift(bitand((this.ft_bins + fbin - this.ft_bin1_offs + 1), (this.ft_bins-1)), -this.ft_ratio);
                 %fprintf('%d) pos:%4d  fbin:%3d  -->  sym:%3d\n', ii, pos, fbin, symbols(ii));
 
                 pos = pos + this.sps;
@@ -287,7 +282,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     fbin = fbin - 1;             % non-inverted chirp, inverted IQ
                 end
 
-                symbols(ii) = round(fbin / this.ft_sym_fct);
+                symbols(ii) = bitshift(bitand((this.ft_bins + fbin - this.ft_bin1_offs + 1), (this.ft_bins-1)), -this.ft_ratio);
                 %fprintf('%d) pos:%4d  fbin:%3d  -->  sym:%3d\n', ii, pos, fbin, symbols(ii));
 
                 pos = pos + this.sps;
