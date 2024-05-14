@@ -371,6 +371,8 @@ chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const int pos, const bool inv
     }
 
     fft(buf, 2*this->ft_bins);
+    // cpvarray_t outbuf(2*this->ft_bins);
+    // kfft(buf, outbuf);
 
     // find max fft bin
     int mbin = 0;

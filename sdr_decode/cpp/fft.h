@@ -4,6 +4,8 @@
 
 namespace
 {
+    const complex_t::value_type tau = 2.0 * std::acos(-1);
+
     int my_log2(const int v)
     {
         int k = v, i = 0;
@@ -26,33 +28,33 @@ namespace
         return p;
     }
 
-    void dist_arr(cpvarray_t& buf, const int count)
+    void dist_arr(cpvarray_t& buf, const int nfft)
     {
-        cpvarray_t tmp(count);
-        for(int i=0; i<count; i++) {
-            tmp[i] = buf[rev_bits(count, i)];
+        cpvarray_t tmp(nfft);
+        for(int i=0; i<nfft; i++) {
+            tmp[i] = buf[rev_bits(nfft, i)];
         }
-        for(int i=0; i<count; i++) {
+        for(int i=0; i<nfft; i++) {
             buf[i] = tmp[i];
         }
     }
 }
 
-void fft(cpvarray_t& buf, const int count)
+void fft(cpvarray_t& buf, const int nfft)
 {
-    dist_arr(buf, count);
+    dist_arr(buf, nfft);
 
-    cpvarray_t W(count/2);
+    cpvarray_t W(nfft/2);
     W[0] = 1;
-    W[1] = std::polar(1.0, (-2.0 * M_PI) / count);
-    for(int i=2, imax=count/2; i<imax; i++) {
+    W[1] = std::polar(complex_t::value_type(1.0), -tau / nfft);
+    for(int i=2, imax=nfft/2; i<imax; i++) {
         W[i] = pow(W[1], i);
     }
 
     int n = 1;
-    int a = count / 2;
-    for(int j=0, jmax=my_log2(count); j<jmax; j++) {
-        for(int i=0; i<count; i++) {
+    int a = nfft / 2;
+    for(int j=0, jmax=my_log2(nfft); j<jmax; j++) {
+        for(int i=0; i<nfft; i++) {
             if(!(i & n)) {
                 complex_t tmp1 = buf[i];
                 complex_t tmp2 = W[(i * a) % (n * a)] * buf[i + n];

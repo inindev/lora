@@ -9,6 +9,7 @@
 
 #include "types.h"
 #include "sdr_stream.h"
+// #include "kfft.h"
 
 typedef std::pair<int, int> chirpval_t;
 typedef std::pair<int, int> sfdinfo_t;
@@ -79,6 +80,8 @@ private:
     int ft_sym_fct;   // fft symbol factor
     int ft_bins;      // fft bins per symbol
     int ft_bin0_offs; // offset from bin0
+
+    // ::kfft kfft;
 
     cpvarray_t upchirp;
     cpvarray_t downchirp;
