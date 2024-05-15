@@ -2,7 +2,7 @@
 // Copyright (c) 2024, John Clark <inindev@gmail.com>
 
 #include "LoraPhy.h"
-#include "fft.h"
+//#include "fft.h"
 
 #define FBIN2SYM(fbin)  (((this->ft_bins + (fbin) - this->ft_bin0_offs + 1) & (this->ft_bins-1)) >> this->ft_ratio)
 
@@ -365,20 +365,20 @@ chirpval_t LoraPhy::dechirp(const cpvarray_t& sig, const int pos, const bool inv
     const cpvarray_t& chp = invert ? this->upchirp : this->downchirp;
 
     // copy the chirped signal into a 2x buffer for fft processing
-    cpvarray_t buf(2*this->ft_bins);
+    cpvarray_t inbuf(this->sps);
     for(int i=0; i < this->sps; i++) {
-        buf[i] = chp[i] * sig[pos + i];
+        inbuf[i] = chp[i] * sig[pos + i];
     }
 
-    fft(buf, 2*this->ft_bins);
-    // cpvarray_t outbuf(2*this->ft_bins);
-    // kfft(buf, outbuf);
+    //fft(buf, 2*this->ft_bins);
+    cpvarray_t outbuf(2*this->ft_bins);
+    kfft(inbuf, outbuf);
 
     // find max fft bin
     int mbin = 0;
     complex_t::value_type mval = 0.0;
     for(int i=0; i < this->ft_bins; i++) {
-        const complex_t::value_type val = std::abs(buf[i]) + std::abs(buf[this->ft_bins + i]);
+        const complex_t::value_type val = std::abs(outbuf[i]) + std::abs(outbuf[this->ft_bins + i]);
         if(val > mval) {
              mbin = i;
              mval = val;
