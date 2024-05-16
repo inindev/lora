@@ -91,7 +91,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                 0x0e, 0x1d, 0x3a, 0x75, 0xea, 0xd5, 0xaa, 0x55, 0xab, 0x57, 0xaf, 0x5f, 0xbe, 0x7c, 0xf9, 0xf2, ...
                 0xe5, 0xca, 0x94, 0x28, 0x50, 0xa1, 0x42, 0x84, 0x09, 0x13, 0x27, 0x4f, 0x9f, 0x3f, 0x7f, ]');
 
-            this.sig = LoraPhy.read_cs16(filename);
+            this.sig = LoraPhy.read_cu8(filename);
             this.sig = lowpass(this.sig, this.bw/2, file_fs);
             if(this.fs ~= file_fs)
                 this.sig = resample(this.sig, this.fs, file_fs);  % resample signal @ 2x bandwidth
@@ -141,7 +141,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
                     pos_adj = uint16((fbin-1) / this.ft_ratio);
                     if(pos_adj > 16)
                         % move fbin to 1
-                        pos = pos - pos_adj;
+                        pos = pos - pos_adj + 1;
                         fbin = 1;
                     end
 
@@ -554,7 +554,7 @@ classdef LoraPhy < handle & matlab.mixin.Copyable
             else
                 t = fread(f, [2, count], 'uint8');
                 fclose(f);
-                t = (single(t) - 127.0) / 128.0;
+                t = (t - 127.4) / 128.0;
                 v = t(1,:) + t(2,:)*1i;
                 [r, c] = size(v);
                 v = reshape(v, c, r);
